@@ -1,0 +1,5 @@
+# Para la API de Canvas
+canvasapi
+
+# Para una GUI moderna y sencilla (recomendado)
+customtkinter
