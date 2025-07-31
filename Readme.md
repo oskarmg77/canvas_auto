@@ -12,6 +12,7 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
 * **Creación de Quizzes**: Implementada la funcionalidad completa en la pestaña "Crear Quiz".
     * Permite definir un título y una descripción.
     * Incluye una opción para elegir entre crear un **Quiz Clásico** o un **Nuevo Quiz (New Quiz)**.
+* **Visualización de Quizzes**: Nueva pestaña para cargar y mostrar una lista de los quizzes clásicos existentes en el curso.
 
 ## Instalación y Ejecución 🚀
 
@@ -44,4 +45,5 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
 
 ## Próximos Pasos
 
+* Ampliar la pestaña "Ver Quizzes" para que muestre también los "Nuevos Quizzes".
 * Desarrollar las funcionalidades en las pestañas "Crear Rúbrica" y "Crear Actividad".

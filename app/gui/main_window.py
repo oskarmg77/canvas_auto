@@ -63,7 +63,6 @@ class MainWindow(ctk.CTk):
         create_button.grid(row=3, column=1, padx=20, pady=20, sticky="e")
 
     def handle_create_quiz(self):
-        """Lógica que se ejecuta al pulsar el botón 'Crear Quiz'."""
         title = self.quiz_title_entry.get()
         description = self.quiz_desc_textbox.get("1.0", "end-1c")
         quiz_type_selection = self.quiz_type_combobox.get()
@@ -72,19 +71,19 @@ class MainWindow(ctk.CTk):
             messagebox.showwarning("Campo Requerido", "El título del quiz no puede estar vacío.")
             return
 
-        quiz_settings = {
+        settings = {
             'title': title,
             'description': description,
-            'quiz_type': 'assignment',
             'published': False
         }
 
-        # --- LÓGICA ACTUALIZADA ---
-        # Añadimos el parámetro 'engine' si se selecciona "Nuevo Quiz"
+        success = False
         if quiz_type_selection == "Nuevo Quiz":
-            quiz_settings['engine'] = 'quizzes.next'
-
-        success = self.client.create_quiz(self.course_id, quiz_settings)
+            # Llamada al método corregido que usa la API de New Quizzes
+            success = self.client.create_new_quiz(self.course_id, settings)
+        else:  # "Quiz Clásico"
+            settings['quiz_type'] = 'assignment'
+            success = self.client.create_quiz(self.course_id, settings)
 
         if success:
             messagebox.showinfo("Éxito", f"El quiz '{title}' ha sido creado correctamente.")
