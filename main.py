@@ -5,7 +5,7 @@ import os
 import customtkinter as ctk
 from tkinter import messagebox
 
-# Añade el directorio raíz del proyecto al 'path' de Python para encontrar el paquete 'app'
+# Adds the project root directory to Python's path to find the 'app' package
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(project_root)
 
@@ -19,62 +19,62 @@ from app.gui.main_window import MainWindow
 class App:
     def __init__(self):
         """
-        Constructor principal de la aplicación que orquesta el flujo de inicio.
+        Main application constructor that orchestrates the startup flow.
         """
-        # Configuración de la apariencia visual de la aplicación
+        # Set the visual appearance for the application
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
-        # 1. Gestionar el login y obtener las credenciales
+        # 1. Handle login and get credentials
         credentials = self.handle_login()
 
-        # Si el usuario no introduce credenciales, la aplicación termina.
+        # If the user doesn't provide credentials, the application exits.
         if not credentials:
-            print("No se proporcionaron credenciales. Saliendo.")
+            print("No credentials provided. Exiting.")
             return
 
-        # 2. Conectar a Canvas con las credenciales obtenidas
+        # 2. Connect to Canvas with the obtained credentials
         client = CanvasClient(credentials['canvas_url'], credentials['api_token'])
 
-        # Si hubo un error de conexión (ej. token inválido), mostrar error y salir.
+        # If there's a connection error (e.g., invalid token), show an error and exit.
         if client.error_message:
-            messagebox.showerror("Error de Conexión", client.error_message)
+            messagebox.showerror("Connection Error", client.error_message)
             return
 
-        # 3. Obtener la lista de cursos activos
+        # 3. Get the list of active courses
         courses = client.get_active_courses()
 
-        # Si hubo un error al obtener los cursos, mostrar error y salir.
+        # If there's an error getting the courses, show an error and exit.
         if courses is None:
-            messagebox.showerror("Error", client.error_message or "No se pudieron obtener los cursos.")
+            messagebox.showerror("Error", client.error_message or "Could not get the course list.")
             return
 
-        # 4. Mostrar la ventana de selección de curso y esperar la elección del usuario
+        # 4. Show the course selection window and wait for the user's choice
         course_win = CourseWindow(courses)
         selected_course_id = course_win.get_selected_course()
 
-        # Si el usuario cierra la ventana sin elegir un curso, la aplicación termina.
+        # If the user closes the window without choosing a course, the application exits.
         if not selected_course_id:
-            print("No se seleccionó ningún curso. Saliendo.")
+            print("No course selected. Exiting.")
             return
 
-        # 5. Abrir la ventana principal de la aplicación para el curso seleccionado
+        # 5. Open the main application window for the selected course
         main_app_window = MainWindow(client=client, course_id=selected_course_id)
         main_app_window.mainloop()
 
     def handle_login(self):
         """
-        Gestiona la carga de credenciales existentes o solicita unas nuevas
-        a través de la ventana de login.
+        Manages loading existing credentials or requesting new ones
+        via the login window.
         """
         credentials = config_manager.load_credentials()
 
-        # Si no existen credenciales guardadas, mostrar la ventana de login
+        # If no saved credentials exist, show the login window
         if not credentials:
             login_win = LoginWindow()
-            login_win.mainloop()  # La ejecución se pausa aquí hasta que se cierre la ventana
+            login_win.mainloop()  # Execution pauses here until the window is closed
 
-            # Intentar cargar de nuevo las credenciales por si se acaban de guardar
+            # Try to load credentials again in case they were just saved
             credentials = config_manager.load_credentials()
 
         return credentials
