@@ -4,6 +4,7 @@ import sys
 import os
 import customtkinter as ctk
 from tkinter import messagebox
+from app.utils.logger_config import logger
 
 # Adds the project root directory to Python's path to find the 'app' package
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -18,6 +19,7 @@ from app.gui.main_window import MainWindow
 
 class App:
     def __init__(self):
+        logger.info("Iniciando aplicación Canvas Auto...")
         """
         Main application constructor that orchestrates the startup flow.
         """

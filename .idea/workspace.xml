@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="fix: Corrige creación de New Quizzes y añade vista de quizzes">
+    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="fix(api): Corrige la obtención de Nuevos Quizzes usando el endpoint correcto">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/api/canvas_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/canvas_client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/gui/course_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/course_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/gui/login_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/login_window.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/gui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/main_window.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
@@ -90,7 +92,8 @@
       <workItem from="1753868463515" duration="3229000" />
       <workItem from="1753885441714" duration="1906000" />
       <workItem from="1753945307297" duration="72000" />
-      <workItem from="1753977150415" duration="1297000" />
+      <workItem from="1753977150415" duration="4576000" />
+      <workItem from="1754057567891" duration="2053000" />
     </task>
     <task id="LOCAL-00001" summary="Implementa flujo de login y selección de curso">
       <option name="closed" value="true" />
@@ -116,7 +119,15 @@
       <option name="project" value="LOCAL" />
       <updated>1753977526899</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="fix(api): Corrige la obtención de Nuevos Quizzes usando el endpoint correcto">
+      <option name="closed" value="true" />
+      <created>1753978627899</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1753978627899</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -126,10 +137,11 @@
     <MESSAGE value="Implementa flujo de login y selección de curso" />
     <MESSAGE value="Implementa la creación de Quizzes Clásicos y Nuevos" />
     <MESSAGE value="fix: Corrige creación de New Quizzes y añade vista de quizzes" />
-    <option name="LAST_COMMIT_MESSAGE" value="fix: Corrige creación de New Quizzes y añade vista de quizzes" />
+    <MESSAGE value="fix(api): Corrige la obtención de Nuevos Quizzes usando el endpoint correcto" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix(api): Corrige la obtención de Nuevos Quizzes usando el endpoint correcto" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/canvas_auto$course_window.coverage" NAME="course_window Coverage Results" MODIFIED="1753873132715" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
-    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1753978477505" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1754059445543" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

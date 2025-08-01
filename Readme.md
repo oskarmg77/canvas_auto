@@ -9,10 +9,12 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
 * **Conexión y Verificación**: El cliente de API verifica que las credenciales sean válidas al conectarse.
 * **Selección de Cursos**: Muestra una lista de los cursos activos del usuario para que seleccione con cuál desea trabajar.
 * **Panel de Control Principal**: Una vez seleccionado un curso, se abre una ventana principal con una interfaz de pestañas para las diferentes herramientas de automatización.
-* **Creación de Quizzes**: Implementada la funcionalidad completa en la pestaña "Crear Quiz".
-    * Permite definir un título y una descripción.
-    * Incluye una opción para elegir entre crear un **Quiz Clásico** o un **Nuevo Quiz (New Quiz)**.
-* **Visualización de Quizzes**: Nueva pestaña para cargar y mostrar una lista completa de los quizzes existentes en el curso, diferenciando entre **Clásicos** y **Nuevos**.
+* **Módulo de Quizzes**:
+    * **Creación**: Permite crear tanto **Quizzes Clásicos** como **Nuevos Quizzes (New Quizzes)**.
+    * **Visualización**: Carga y muestra una lista completa de todos los quizzes existentes en el curso.
+* **Módulo de Rúbricas**:
+    * **Creación**: Permite crear rúbricas a partir de texto plano, asociándolas correctamente al curso para su visibilidad.
+    * **Visualización**: Carga y muestra una lista de todas las rúbricas disponibles para el curso.
 
 ## Instalación y Ejecución 🚀
 
@@ -45,4 +47,4 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
 
 ## Próximos Pasos
 
-* Desarrollar las funcionalidades en las pestañas "Crear Rúbrica" y "Crear Actividad".
+* Desarrollar la funcionalidad en la pestaña "Crear Actividad".
