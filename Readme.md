@@ -15,6 +15,38 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
 * **Módulo de Rúbricas**:
     * **Creación**: Permite crear rúbricas a partir de texto plano, asociándolas correctamente al curso para su visibilidad.
     * **Visualización**: Carga y muestra una lista de todas las rúbricas disponibles para el curso.
+* **Módulo de Actividades**:
+    * **Creación**: Permite crear actividades (tareas) definiendo su nombre, puntos, descripción y tipos de entrega online.
+
+## Estructura del Proyecto 📂
+
+```
+canvas_auto/
+├── app/                     # Módulo principal de la aplicación
+│   ├── __init__.py
+│   ├── api/                 # Comunicación con la API de Canvas
+│   │   ├── __init__.py
+│   │   └── canvas_client.py
+│   ├── core/                # Lógica de negocio (actualmente vacío)
+│   │   ├── __init__.py
+│   │   └── automation.py
+│   ├── gui/                 # Módulos de la interfaz gráfica
+│   │   ├── __init__.py
+│   │   ├── course_window.py
+│   │   ├── login_window.py
+│   │   └── main_window.py
+│   └── utils/               # Utilidades (configuración, logs)
+│       ├── __init__.py
+│       ├── config_manager.py
+│       └── logger_config.py
+├── logs/                    # Archivos de registro
+│   └── canvas_auto.log
+├── .gitignore               # Archivos a ignorar por Git
+├── config.json              # Credenciales guardadas (se crea al primer uso)
+├── main.py                  # Punto de entrada de la aplicación
+├── Readme.md                # Este archivo
+└── requirements.txt         # Dependencias de Python
+```
 
 ## Instalación y Ejecución 🚀
 
@@ -47,4 +79,6 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
 
 ## Próximos Pasos
 
-* Desarrollar la funcionalidad en la pestaña "Crear Actividad".
+* Añadir más opciones avanzadas a la creación de actividades (fechas de entrega, publicación, etc.).
+* Implementar la edición o eliminación de elementos ya creados.
+* Refinar la interfaz de usuario.

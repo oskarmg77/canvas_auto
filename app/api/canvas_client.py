@@ -169,3 +169,23 @@ class CanvasClient:
         except Exception as e:
             self.error_message = f"Error al obtener la lista de rúbricas: {e}"
             return None
+
+    def create_assignment(self, course_id: int, assignment_settings: dict):
+        """
+        Crea una nueva actividad (assignment) en el curso.
+        """
+        logger.info(f"Intentando crear actividad con configuración: {assignment_settings}")
+        if not self.canvas:
+            return False
+
+        try:
+            course = self.get_course(course_id)
+            if course:
+                new_assignment = course.create_assignment(assignment=assignment_settings)
+                logger.info(f"Actividad '{new_assignment.name}' creada con éxito (ID: {new_assignment.id}).")
+                return True
+            return False
+        except Exception as e:
+            self.error_message = f"Error de API al crear la actividad: {e}"
+            logger.error(self.error_message, exc_info=True)
+            return False
