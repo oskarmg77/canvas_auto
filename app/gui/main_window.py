@@ -2,8 +2,14 @@
 
 import customtkinter as ctk
 from app.api.canvas_client import CanvasClient
-from tkinter import messagebox
+from .quizzes_menu import QuizzesMenu
+from .rubrics_menu import RubricsMenu
+from .activities_menu import ActivitiesMenu
 from app.utils.logger_config import logger
+
+# Importaciones necesarias para manejar imágenes
+import os
+from PIL import Image
 
 
 class MainWindow(ctk.CTk):
@@ -12,231 +18,150 @@ class MainWindow(ctk.CTk):
 
         self.client = client
         self.course_id = course_id
+        self.restart = False
 
-        self.course = self.client.get_course(self.course_id)
-        course_name = self.course.name if self.course else f"Curso ID: {self.course_id}"
-
-        self.title(f"Canvas Auto - {course_name}")
+        # --- CONFIGURACIÓN DE LA VENTANA PRINCIPAL ---
+        course = self.client.get_course(self.course_id)
+        self.course_name = course.name if course else f"Curso ID: {self.course_id}"
+        self.title(f"Canvas Auto - {self.course_name}")
         self.geometry("800x600")
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        self.tab_view = ctk.CTkTabview(self, anchor="w")
-        self.tab_view.pack(expand=True, fill="both", padx=10, pady=10)
+        # --- CARGAR ICONOS (con mayor tamaño) ---
+        self.load_icons()
 
-        self.tab_view.add("Crear Quiz")
-        self.tab_view.add("Ver Quizzes")
-        self.tab_view.add("Crear Rúbrica")
-        self.tab_view.add("Ver Rúbricas")
-        self.tab_view.add("Crear Actividad")
+        # --- SUBMENÚS (INICIALMENTE OCULTOS) ---
+        self.quizzes_frame = QuizzesMenu(self, self.client, self.course_id, self.show_main_menu)
+        self.rubrics_frame = RubricsMenu(self, self.client, self.course_id, self.show_main_menu)
+        self.activities_frame = ActivitiesMenu(self, self.client, self.course_id, self.show_main_menu)
 
-        self.setup_quiz_tab()
-        self.setup_view_quizzes_tab()
-        self.setup_create_rubric_tab()
-        self.setup_view_rubrics_tab()
-        self.setup_activity_tab()
+        # --- INICIAR EL MENÚ PRINCIPAL ---
+        self.setup_main_menu()
 
-    def setup_quiz_tab(self):
-        quiz_tab = self.tab_view.tab("Crear Quiz")
-        quiz_tab.grid_columnconfigure(1, weight=1)
-        title_label = ctk.CTkLabel(quiz_tab, text="Título del Quiz:")
-        title_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
-        self.quiz_title_entry = ctk.CTkEntry(quiz_tab, width=400)
-        self.quiz_title_entry.grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
-        type_label = ctk.CTkLabel(quiz_tab, text="Tipo de Quiz:")
-        type_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
-        self.quiz_type_combobox = ctk.CTkComboBox(quiz_tab, values=["Quiz Clásico", "Nuevo Quiz"])
-        self.quiz_type_combobox.set("Quiz Clásico")
-        self.quiz_type_combobox.grid(row=1, column=1, padx=20, pady=10, sticky="w")
-        desc_label = ctk.CTkLabel(quiz_tab, text="Descripción / Instrucciones:")
-        desc_label.grid(row=2, column=0, padx=20, pady=10, sticky="nw")
-        self.quiz_desc_textbox = ctk.CTkTextbox(quiz_tab, height=200)
-        self.quiz_desc_textbox.grid(row=2, column=1, padx=20, pady=10, sticky="nsew")
-        quiz_tab.grid_rowconfigure(2, weight=1)
-        create_button = ctk.CTkButton(quiz_tab, text="Crear Quiz", command=self.handle_create_quiz)
-        create_button.grid(row=3, column=1, padx=20, pady=20, sticky="e")
+    def load_icons(self):
+        """Carga las imágenes para los botones del menú con un tamaño mayor."""
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "icons")
 
-    def handle_create_quiz(self):
-        logger.info("Botón 'Crear Quiz' pulsado.")
-        title = self.quiz_title_entry.get()
-        description = self.quiz_desc_textbox.get("1.0", "end-1c")
-        quiz_type_selection = self.quiz_type_combobox.get()
-        if not title:
-            messagebox.showwarning("Campo Requerido", "El título del quiz no puede estar vacío.")
-            return
-        settings = {'title': title, 'description': description, 'published': False}
-        success = False
-        if quiz_type_selection == "Nuevo Quiz":
-            success = self.client.create_new_quiz(self.course_id, settings)
-        else:
-            settings['quiz_type'] = 'assignment'
-            success = self.client.create_quiz(self.course_id, settings)
-        if success:
-            messagebox.showinfo("Éxito", f"El quiz '{title}' ha sido creado correctamente.")
-            self.quiz_title_entry.delete(0, "end")
-            self.quiz_desc_textbox.delete("1.0", "end")
-        else:
-            messagebox.showerror("Error", self.client.error_message or "Ocurrió un error al crear el quiz.")
+        # Aumentamos el tamaño de los iconos a 100x100 píxeles
+        self.quiz_icon = self.get_ctk_image(os.path.join(icon_path, "quiz_icon.png"), size=(100, 100))
+        self.rubric_icon = self.get_ctk_image(os.path.join(icon_path, "rubric_icon.png"), size=(100, 100))
+        self.activity_icon = self.get_ctk_image(os.path.join(icon_path, "activity_icon.png"), size=(100, 100))
+        self.course_icon = self.get_ctk_image(os.path.join(icon_path, "course_icon.png"), size=(100, 100))
 
-    def setup_view_quizzes_tab(self):
-        view_tab = self.tab_view.tab("Ver Quizzes")
-        view_tab.grid_columnconfigure(0, weight=1)
-        view_tab.grid_rowconfigure(1, weight=1)
-        action_frame = ctk.CTkFrame(view_tab)
-        action_frame.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
-        refresh_button = ctk.CTkButton(action_frame, text="Cargar Todos los Quizzes", command=self.handle_view_quizzes)
-        refresh_button.pack(side="left")
-        self.quiz_list_frame = ctk.CTkScrollableFrame(view_tab, label_text="Quizzes en el Curso")
-        self.quiz_list_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
-
-    def handle_view_quizzes(self):
-        logger.info("Botón 'Cargar Todos los Quizzes' pulsado.")
-        for widget in self.quiz_list_frame.winfo_children():
-            widget.destroy()
-        classic_quizzes = self.client.get_quizzes(self.course_id)
-        new_quizzes = self.client.get_new_quizzes(self.course_id)
-        if classic_quizzes is None or new_quizzes is None:
-            messagebox.showerror("Error", self.client.error_message or "No se pudo cargar la lista de quizzes.")
-            return
-        all_quizzes = classic_quizzes + new_quizzes
-        if not all_quizzes:
-            label = ctk.CTkLabel(self.quiz_list_frame, text="No se encontraron quizzes en este curso.")
-            label.pack(pady=10)
-        else:
-            if classic_quizzes:
-                classic_header = ctk.CTkLabel(self.quiz_list_frame, text="Quizzes Clásicos",
-                                              font=ctk.CTkFont(weight="bold"))
-                classic_header.pack(anchor="w", padx=10, pady=(5, 2))
-                for quiz in classic_quizzes:
-                    label = ctk.CTkLabel(self.quiz_list_frame, text=f"• {quiz['title']} (ID: {quiz['id']})")
-                    label.pack(anchor="w", padx=20, pady=2)
-            if new_quizzes:
-                new_header = ctk.CTkLabel(self.quiz_list_frame, text="Nuevos Quizzes", font=ctk.CTkFont(weight="bold"))
-                new_header.pack(anchor="w", padx=10, pady=(15, 2))
-                for quiz in new_quizzes:
-                    label = ctk.CTkLabel(self.quiz_list_frame, text=f"• {quiz['title']} (ID: {quiz['id']})")
-                    label.pack(anchor="w", padx=20, pady=2)
-
-    def setup_create_rubric_tab(self):
-        rubric_tab = self.tab_view.tab("Crear Rúbrica")
-        rubric_tab.grid_columnconfigure(1, weight=1)
-        title_label = ctk.CTkLabel(rubric_tab, text="Título de la Rúbrica:")
-        title_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
-        self.rubric_title_entry = ctk.CTkEntry(rubric_tab)
-        self.rubric_title_entry.grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
-        criteria_label = ctk.CTkLabel(rubric_tab, text="Criterios:")
-        criteria_label.grid(row=1, column=0, padx=20, pady=10, sticky="nw")
-        instructions_text = "Escribe cada criterio en una nueva línea con el formato:\n\ndescripción corta, descripción larga, puntos\n\nEjemplo:\nOrtografía, El texto no contiene errores ortográficos., 5"
-        self.rubric_criteria_textbox = ctk.CTkTextbox(rubric_tab, height=200)
-        self.rubric_criteria_textbox.insert("1.0", instructions_text)
-        self.rubric_criteria_textbox.grid(row=1, column=1, padx=20, pady=10, sticky="nsew")
-        rubric_tab.grid_rowconfigure(1, weight=1)
-        create_button = ctk.CTkButton(rubric_tab, text="Crear Rúbrica", command=self.handle_create_rubric)
-        create_button.grid(row=2, column=1, padx=20, pady=20, sticky="e")
-
-    def handle_create_rubric(self):
-        logger.info("Botón 'Crear Rúbrica' pulsado.")
-        title = self.rubric_title_entry.get()
-        criteria_text = self.rubric_criteria_textbox.get("1.0", "end-1c")
-        if not title or not criteria_text or criteria_text.startswith("Escribe cada criterio"):
-            messagebox.showwarning("Campos Requeridos", "El título y los criterios son obligatorios.")
-            return
-        success = self.client.create_rubric(self.course_id, title, criteria_text)
-        if success:
-            messagebox.showinfo("Éxito", f"La rúbrica '{title}' ha sido creada correctamente.")
-            self.rubric_title_entry.delete(0, "end")
-            self.rubric_criteria_textbox.delete("1.0", "end")
-        else:
-            messagebox.showerror("Error", self.client.error_message or "Ocurrió un error al crear la rúbrica.")
-
-    def setup_view_rubrics_tab(self):
-        view_tab = self.tab_view.tab("Ver Rúbricas")
-        view_tab.grid_columnconfigure(0, weight=1)
-        view_tab.grid_rowconfigure(1, weight=1)
-        action_frame = ctk.CTkFrame(view_tab)
-        action_frame.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
-        refresh_button = ctk.CTkButton(action_frame, text="Cargar Rúbricas", command=self.handle_view_rubrics)
-        refresh_button.pack(side="left")
-        self.rubric_list_frame = ctk.CTkScrollableFrame(view_tab, label_text="Rúbricas en el Curso")
-        self.rubric_list_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
-
-    def handle_view_rubrics(self):
-        logger.info("Botón 'Cargar Rúbricas' pulsado.")
-        for widget in self.rubric_list_frame.winfo_children():
-            widget.destroy()
-        rubrics = self.client.get_rubrics(self.course_id)
-        if rubrics is None:
-            messagebox.showerror("Error", self.client.error_message or "No se pudo cargar la lista de rúbricas.")
-            return
-        if not rubrics:
-            label = ctk.CTkLabel(self.rubric_list_frame, text="No se encontraron rúbricas en este curso.")
-            label.pack(pady=10)
-        else:
-            for rubric in rubrics:
-                label = ctk.CTkLabel(self.rubric_list_frame, text=f"• {rubric['title']} (ID: {rubric['id']})")
-                label.pack(anchor="w", padx=10, pady=2)
-
-    def setup_activity_tab(self):
-        """Configura el contenido de la pestaña 'Crear Actividad'."""
-        activity_tab = self.tab_view.tab("Crear Actividad")
-        activity_tab.grid_columnconfigure(1, weight=1)
-        name_label = ctk.CTkLabel(activity_tab, text="Nombre de la Actividad:")
-        name_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
-        self.activity_name_entry = ctk.CTkEntry(activity_tab)
-        self.activity_name_entry.grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
-        points_label = ctk.CTkLabel(activity_tab, text="Puntos Posibles:")
-        points_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
-        self.activity_points_entry = ctk.CTkEntry(activity_tab)
-        self.activity_points_entry.grid(row=1, column=1, padx=20, pady=10, sticky="w")
-        submission_label = ctk.CTkLabel(activity_tab, text="Tipos de Entrega Online:")
-        submission_label.grid(row=2, column=0, padx=20, pady=10, sticky="nw")
-        submission_frame = ctk.CTkFrame(activity_tab)
-        submission_frame.grid(row=2, column=1, padx=20, pady=10, sticky="w")
-        self.sub_type_upload = ctk.CTkCheckBox(submission_frame, text="Subir archivo (online_upload)")
-        self.sub_type_upload.pack(anchor="w", padx=10, pady=5)
-        self.sub_type_text = ctk.CTkCheckBox(submission_frame, text="Entrada de texto (online_text_entry)")
-        self.sub_type_text.pack(anchor="w", padx=10, pady=5)
-        self.sub_type_url = ctk.CTkCheckBox(submission_frame, text="URL de un sitio web (online_url)")
-        self.sub_type_url.pack(anchor="w", padx=10, pady=5)
-        desc_label = ctk.CTkLabel(activity_tab, text="Descripción:")
-        desc_label.grid(row=3, column=0, padx=20, pady=10, sticky="nw")
-        self.activity_desc_textbox = ctk.CTkTextbox(activity_tab, height=150)
-        self.activity_desc_textbox.grid(row=3, column=1, padx=20, pady=10, sticky="nsew")
-        activity_tab.grid_rowconfigure(3, weight=1)
-        create_button = ctk.CTkButton(activity_tab, text="Crear Actividad", command=self.handle_create_activity)
-        create_button.grid(row=4, column=1, padx=20, pady=20, sticky="e")
-
-    def handle_create_activity(self):
-        """Gestiona la creación de una nueva actividad."""
-        logger.info("Botón 'Crear Actividad' pulsado.")
-        name = self.activity_name_entry.get()
-        points = self.activity_points_entry.get()
-        description = self.activity_desc_textbox.get("1.0", "end-1c")
-        submission_types = []
-        if self.sub_type_upload.get(): submission_types.append('online_upload')
-        if self.sub_type_text.get(): submission_types.append('online_text_entry')
-        if self.sub_type_url.get(): submission_types.append('online_url')
-        if not submission_types:
-            messagebox.showwarning("Campo Requerido", "Debes seleccionar al menos un tipo de entrega.")
-            return
-        activity_settings = {
-            'name': name,
-            'submission_types': submission_types,
-            'description': description,
-            'published': False
-        }
+    def get_ctk_image(self, path, size=(64, 64)):
+        """Carga una imagen y la convierte a CTkImage, manejando errores."""
         try:
-            if points:
-                activity_settings['points_possible'] = int(points)
-        except ValueError:
-            messagebox.showwarning("Valor Inválido", "Los puntos deben ser un número.")
-            return
-        success = self.client.create_assignment(self.course_id, activity_settings)
-        if success:
-            messagebox.showinfo("Éxito", f"La actividad '{name}' ha sido creada correctamente.")
-            self.activity_name_entry.delete(0, "end")
-            self.activity_points_entry.delete(0, "end")
-            self.activity_desc_textbox.delete("1.0", "end")
-            self.sub_type_upload.deselect()
-            self.sub_type_text.deselect()
-            self.sub_type_url.deselect()
-        else:
-            messagebox.showerror("Error", self.client.error_message or "Ocurrió un error al crear la actividad.")
+            return ctk.CTkImage(light_image=Image.open(path),
+                                dark_image=Image.open(path),
+                                size=size)
+        except FileNotFoundError:
+            logger.error(f"No se pudo encontrar el icono en la ruta: {path}")
+            return ctk.CTkImage(light_image=Image.new('RGB', size, 'grey'), size=size)
+
+    def create_card_button(self, parent, icon_image, text, command):
+        """Crea una tarjeta interactiva que ocupa el espacio disponible."""
+
+        # La tarjeta principal, con radio de esquina y cursor de mano.
+        # Se inicializa sin borde visible (border_width=0).
+        card = ctk.CTkFrame(parent, corner_radius=15, cursor="hand2", border_width=0)
+
+        # --- FUNCIONES DE HOVER ---
+        def on_enter(event):
+            # Al entrar, se crea un borde de 2px con un color específico.
+            card.configure(border_color="#1F6AA5", border_width=2)
+
+        def on_leave(event):
+            # Al salir, el borde simplemente se vuelve de grosor 0, haciéndolo invisible.
+            # Ya NO se menciona el border_color.
+            card.configure(border_width=0)
+
+        # --- BINDINGS (EVENTOS) ---
+        card.bind("<Enter>", on_enter)
+        card.bind("<Leave>", on_leave)
+
+        # Centrar el contenido dentro de la tarjeta
+        card.grid_rowconfigure(0, weight=1)  # Espacio vacío arriba
+        card.grid_rowconfigure(1, weight=0)  # Icono
+        card.grid_rowconfigure(2, weight=0)  # Texto
+        card.grid_rowconfigure(3, weight=1)  # Espacio vacío abajo
+        card.grid_columnconfigure(0, weight=1)  # Columna central
+
+        # Etiqueta para el icono
+        icon_label = ctk.CTkLabel(card, image=icon_image, text="")
+        icon_label.grid(row=1, column=0, pady=(0, 10))
+
+        # Etiqueta para el texto (más grande y en negrita)
+        text_label = ctk.CTkLabel(card, text=text, font=ctk.CTkFont(size=18, weight="bold"))
+        text_label.grid(row=2, column=0, padx=10, pady=(0, 15))
+
+        # --- Función de clic ---
+        def on_click(event):
+            command()
+
+        # Vincular el evento de clic a todos los elementos de la tarjeta
+        card.bind("<Button-1>", on_click)
+        icon_label.bind("<Button-1>", on_click)
+        text_label.bind("<Button-1>", on_click)
+
+        return card
+
+    def setup_main_menu(self):
+        """Crea la parrilla de tarjetas que se expanden para llenar la ventana."""
+        self.main_menu_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_menu_frame.grid(row=0, column=0, sticky="nsew")
+
+        # Configurar la parrilla para que las filas y columnas se expandan
+        self.main_menu_frame.grid_rowconfigure(0, weight=0)  # Fila para el título (no se expande)
+        self.main_menu_frame.grid_rowconfigure((1, 2), weight=1)  # Filas para las tarjetas (se expanden)
+        self.main_menu_frame.grid_columnconfigure((0, 1), weight=1)  # Columnas (se expanden)
+
+        # Título del curso (más grande)
+        title_label = ctk.CTkLabel(self.main_menu_frame, text=self.course_name,
+                                   font=ctk.CTkFont(size=28, weight="bold"))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(40, 30))
+
+        # --- Crear las tarjetas ---
+        # sticky="nsew" hace que la tarjeta llene completamente su celda en la parrilla.
+        # padx/pady añade un espacio entre las tarjetas.
+        quiz_card = self.create_card_button(self.main_menu_frame, self.quiz_icon, "Quizzes", self.show_quizzes_menu)
+        quiz_card.grid(row=1, column=0, padx=20, pady=20, sticky="nsew")
+
+        rubric_card = self.create_card_button(self.main_menu_frame, self.rubric_icon, "Rúbricas",
+                                              self.show_rubrics_menu)
+        rubric_card.grid(row=1, column=1, padx=20, pady=20, sticky="nsew")
+
+        activity_card = self.create_card_button(self.main_menu_frame, self.activity_icon, "Actividades",
+                                                self.show_activities_menu)
+        activity_card.grid(row=2, column=0, padx=20, pady=20, sticky="nsew")
+
+        course_card = self.create_card_button(self.main_menu_frame, self.course_icon, "Cambiar Curso",
+                                              self.change_course)
+        course_card.grid(row=2, column=1, padx=20, pady=20, sticky="nsew")
+
+    def show_frame(self, frame_to_show):
+        self.main_menu_frame.grid_forget()
+        frame_to_show.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+
+    def show_main_menu(self):
+        self.quizzes_frame.grid_forget()
+        self.rubrics_frame.grid_forget()
+        self.activities_frame.grid_forget()
+        self.main_menu_frame.grid(row=0, column=0, sticky="nsew")
+
+    def show_quizzes_menu(self):
+        logger.info("Navegando al menú de quizzes.")
+        self.show_frame(self.quizzes_frame)
+
+    def show_rubrics_menu(self):
+        logger.info("Navegando al menú de rúbricas.")
+        self.show_frame(self.rubrics_frame)
+
+    def show_activities_menu(self):
+        logger.info("Navegando al menú de actividades.")
+        self.show_frame(self.activities_frame)
+
+    def change_course(self):
+        logger.info("Botón 'Seleccionar otro Curso' pulsado. Reiniciando flujo.")
+        self.restart = True
+        self.destroy()

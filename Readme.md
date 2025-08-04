@@ -1,22 +1,19 @@
-# Canvas Auto 自动化
+# Canvas Auto
 
 Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, construida con Python y CustomTkinter.
 
 ## Características Actuales ✨
 
-* **Interfaz Gráfica Moderna**: Uso de `customtkinter` para una apariencia atractiva y sencilla.
-* **Gestión de Credenciales**: Almacenamiento local de la URL de Canvas y el token de API.
+* **Interfaz Gráfica Moderna**: Uso de `customtkinter` para una apariencia atractiva y fluida.
+* **Menú Principal tipo Dashboard**: Una vez seleccionado un curso, se presenta un menú principal de tarjetas interactivas y visuales que mejoran la experiencia de usuario.
+* **Iconos Personalizados**: Cada opción del menú cuenta con iconos únicos que representan su función.
+* **Gestión de Credenciales**: Almacenamiento local y seguro de la URL de Canvas y el token de API.
 * **Conexión y Verificación**: El cliente de API verifica que las credenciales sean válidas al conectarse.
-* **Selección de Cursos**: Muestra una lista de los cursos activos del usuario para que seleccione con cuál desea trabajar.
-* **Panel de Control Principal**: Una vez seleccionado un curso, se abre una ventana principal con una interfaz de pestañas para las diferentes herramientas de automatización.
-* **Módulo de Quizzes**:
-    * **Creación**: Permite crear tanto **Quizzes Clásicos** como **Nuevos Quizzes (New Quizzes)**.
-    * **Visualización**: Carga y muestra una lista completa de todos los quizzes existentes en el curso.
-* **Módulo de Rúbricas**:
-    * **Creación**: Permite crear rúbricas a partir de texto plano, asociándolas correctamente al curso para su visibilidad.
-    * **Visualización**: Carga y muestra una lista de todas las rúbricas disponibles para el curso.
-* **Módulo de Actividades**:
-    * **Creación**: Permite crear actividades (tareas) definiendo su nombre, puntos, descripción y tipos de entrega online.
+* **Selección de Cursos**: Muestra una lista de los cursos activos del usuario para que seleccione con cuál desea trabajar, con la opción de cambiar de curso sin reiniciar la aplicación.
+* **Módulos de Gestión por Submenús**:
+    * **Gestión de Quizzes**: Permite crear tanto **Quizzes Clásicos** como **Nuevos Quizzes (New Quizzes)** y visualizar una lista completa de los existentes.
+    * **Gestión de Rúbricas**: Permite crear rúbricas a partir de texto plano y visualizar las que ya existen en el curso.
+    * **Gestión de Actividades**: Permite crear actividades (tareas) definiendo su nombre, puntos, descripción y tipos de entrega online.
 
 ## Estructura del Proyecto 📂
 

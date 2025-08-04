@@ -1,5 +1,7 @@
 # Para la API de Canvas
-canvasapi
+canvasapi~=3.3.0
 
 # Para una GUI moderna y sencilla (recomendado)
-customtkinter
+customtkinter~=5.2.2
+requests~=2.32.4
+pillow~=11.3.0
