@@ -1,17 +1,25 @@
 # app/api/canvas_client.py
 
 import requests
+import json
 from canvasapi import Canvas
 from canvasapi.exceptions import InvalidAccessToken, Unauthorized
 from app.utils.logger_config import logger
 
-
 class CanvasClient:
+    """
+    Gestiona toda la comunicación con la API de Canvas LMS.
+    """
+
+    # --------------------------------------------------------------------------
+    # INICIALIZACIÓN Y CONEXIÓN
+    # --------------------------------------------------------------------------
+
     def __init__(self, canvas_url: str, api_token: str):
         logger.info("Inicializando CanvasClient...")
         self.canvas = None
         self.error_message = None
-        self.canvas_url = canvas_url
+        self.canvas_url = canvas_url.rstrip('/')
         self.api_token = api_token
         try:
             self.canvas = Canvas(self.canvas_url, self.api_token)
@@ -24,79 +32,109 @@ class CanvasClient:
             self.error_message = f"No se pudo conectar a Canvas. Verifique la URL.\nError: {e}"
             logger.error(self.error_message)
 
-    def create_rubric(self, course_id: int, title: str, criteria_text: str):
-        logger.info(f"Intentando crear rúbrica '{title}' en el curso ID: {course_id}")
+    # --------------------------------------------------------------------------
+    # MÉTODOS RELACIONADOS CON RÚBRICAS
+    # --------------------------------------------------------------------------
+
+    def create_rubric(self, course_id: int, title: str, criteria_data: list, options: dict) -> bool:
+        """
+        Crea una rúbrica completa con todos sus niveles en una sola petición POST,
+        asegurando que tanto los criterios como los ratings se envíen como diccionarios indexados.
+        """
+        logger.info(f"Intentando creación de rúbrica en un solo paso para '{title}'")
         if not self.canvas: return False
 
-        parsed_criteria = {}
-        try:
-            lines = criteria_text.strip().split('\n')
-            for i, line in enumerate(lines):
-                if not line.strip(): continue
-                parts = [p.strip() for p in line.split(',')]
-                if len(parts) != 3:
-                    self.error_message = f"Error de formato en la línea {i + 1} del criterio. Se esperan 3 partes."
-                    logger.error(self.error_message)
-                    return False
+        processed_criteria = {}
+        for c_idx, crit in enumerate(criteria_data):
+            crit_copy = crit.copy()
 
-                description, long_description, points = parts
-                parsed_criteria[str(i)] = {
-                    'description': description,
-                    'long_description': long_description,
-                    'points': int(points)
+            # --- CORRECCIÓN FINAL APLICADA ---
+            # 1. Convertimos la lista de 'ratings' en un diccionario indexado.
+            ratings_list = crit_copy.pop('ratings', [])
+            ratings_dict = {}
+            for r_idx, rating in enumerate(ratings_list):
+                # 2. Nos aseguramos de que los puntos se envíen como string para máxima compatibilidad.
+                ratings_dict[str(r_idx)] = {
+                    "description": rating.get("description", ""),
+                    "long_description": rating.get("long_description", ""),
+                    "points": str(rating.get("points", 0))
                 }
-            logger.info(f"Criterios procesados: {parsed_criteria}")
-        except (ValueError, IndexError) as e:
-            self.error_message = f"Error al procesar los criterios: {e}"
-            logger.error(self.error_message)
-            return False
+            crit_copy['ratings'] = ratings_dict
+            # --- FIN DE LA CORRECCIÓN ---
 
-        if not parsed_criteria:
+            processed_criteria[str(c_idx)] = crit_copy
+
+        if not processed_criteria:
             self.error_message = "No se han proporcionado criterios válidos."
             logger.warning(self.error_message)
             return False
 
-        # --- MÉTODO CORREGIDO: Usando 'requests' para un control total ---
         api_url = f"{self.canvas_url}/api/v1/courses/{course_id}/rubrics"
         headers = {'Authorization': f'Bearer {self.api_token}'}
 
-        payload = {
+        full_payload = {
             'rubric': {
                 'title': title,
-                'criteria': parsed_criteria
+                'criteria': processed_criteria,
+                'free_form_criterion_comments': options.get('free_form_criterion_comments', True)
             },
             'rubric_association': {
                 'association_id': course_id,
                 'association_type': 'Course',
-                'purpose': 'grading'
+                'purpose': options.get('purpose', 'grading'),
+                'hide_score_total': options.get('hide_score_total', False)
             }
         }
 
         try:
-            logger.info(f"Enviando datos de rúbrica a la API: {payload}")
-            response = requests.post(api_url, headers=headers, json=payload)
-
-            # Revisar si la respuesta del servidor es un error
+            logger.info(f"Enviando payload completo final (POST) a {api_url}: {json.dumps(full_payload, indent=2)}")
+            response = requests.post(api_url, headers=headers, json=full_payload)
             response.raise_for_status()
-
-            logger.info(f"Rúbrica creada con éxito. Respuesta: {response.json()}")
+            logger.info(f"¡ÉXITO! Rúbrica creada correctamente. Respuesta: {response.json()}")
             return True
         except requests.exceptions.RequestException as e:
             self.error_message = f"Error de API al crear la rúbrica: {e}\nRespuesta: {e.response.text if e.response else 'N/A'}"
             logger.error(self.error_message, exc_info=True)
             return False
 
-    # --- El resto de los métodos permanecen sin cambios ---
-    def get_active_courses(self):
+    def get_rubrics(self, course_id: int) -> list | None:
+        """Obtiene una lista de todas las rúbricas asociadas a un curso."""
+        if not self.canvas: return None
+        try:
+            course = self.get_course(course_id)
+            if course:
+                rubrics = course.get_rubrics()
+                return [{"id": rubric.id, "title": rubric.title, "points_possible": rubric.points_possible} for rubric in rubrics]
+            return []
+        except Exception as e:
+            self.error_message = f"Error al obtener la lista de rúbricas: {e}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    # --------------------------------------------------------------------------
+    # OTROS MÉTODOS (Cursos, Quizzes, Actividades)
+    # --------------------------------------------------------------------------
+
+    def get_active_courses(self) -> list | None:
         if not self.canvas: return None
         try:
             courses = self.canvas.get_courses(enrollment_state="active")
             return [{"id": course.id, "name": course.name} for course in courses]
         except Exception as e:
             self.error_message = f"Error al obtener los cursos: {e}"
+            logger.error(self.error_message, exc_info=True)
             return None
 
-    def create_quiz(self, course_id: int, quiz_settings: dict):
+    def get_course(self, course_id: int):
+        if not self.canvas: return None
+        try:
+            return self.canvas.get_course(course_id)
+        except Exception as e:
+            self.error_message = f"Error al obtener el curso {course_id}: {e}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def create_quiz(self, course_id: int, quiz_settings: dict) -> bool:
         if not self.canvas: return False
         try:
             course = self.get_course(course_id)
@@ -106,27 +144,23 @@ class CanvasClient:
             return False
         except Exception as e:
             self.error_message = f"Error al crear el quiz clásico: {e}"
+            logger.error(self.error_message, exc_info=True)
             return False
 
-    def create_new_quiz(self, course_id: int, settings: dict):
+    def create_new_quiz(self, course_id: int, settings: dict) -> bool:
         api_url = f"{self.canvas_url}/api/quiz/v1/courses/{course_id}/quizzes"
         headers = {'Authorization': f'Bearer {self.api_token}'}
-        payload = {
-            'quiz': {
-                'title': settings.get('title'),
-                'instructions': settings.get('description'),
-                'published': settings.get('published', False)
-            }
-        }
+        payload = {'quiz': settings}
         try:
             response = requests.post(api_url, headers=headers, json=payload)
             response.raise_for_status()
             return True
         except requests.exceptions.RequestException as e:
             self.error_message = f"Error de API al crear el Nuevo Quiz: {e}\nRespuesta: {e.response.text if e.response else 'N/A'}"
+            logger.error(self.error_message, exc_info=True)
             return False
 
-    def get_quizzes(self, course_id: int):
+    def get_quizzes(self, course_id: int) -> list | None:
         if not self.canvas: return None
         try:
             course = self.get_course(course_id)
@@ -134,9 +168,10 @@ class CanvasClient:
             return [{"id": quiz.id, "title": quiz.title} for quiz in quizzes]
         except Exception as e:
             self.error_message = f"Error al obtener la lista de quizzes clásicos: {e}"
+            logger.error(self.error_message, exc_info=True)
             return None
 
-    def get_new_quizzes(self, course_id: int):
+    def get_new_quizzes(self, course_id: int) -> list | None:
         if not self.canvas: return None
         api_url = f"{self.canvas_url}/api/quiz/v1/courses/{course_id}/quizzes"
         headers = {'Authorization': f'Bearer {self.api_token}'}
@@ -147,37 +182,12 @@ class CanvasClient:
             return [{"id": quiz.get('id'), "title": quiz.get('title')} for quiz in new_quizzes_data]
         except requests.exceptions.RequestException as e:
             self.error_message = f"Error de API al obtener la lista de Nuevos Quizzes: {e}\nRespuesta: {e.response.text if e.response else 'N/A'}"
+            logger.error(self.error_message, exc_info=True)
             return None
 
-    def get_course(self, course_id: int):
-        if not self.canvas: return None
-        try:
-            return self.canvas.get_course(course_id)
-        except Exception as e:
-            self.error_message = f"Error al obtener el curso {course_id}: {e}"
-            return None
-
-    def get_rubrics(self, course_id: int):
-        if not self.canvas:
-            return None
-        try:
-            course = self.get_course(course_id)
-            if course:
-                rubrics = course.get_rubrics()
-                return [{"id": rubric.id, "title": rubric.title} for rubric in rubrics]
-            return []
-        except Exception as e:
-            self.error_message = f"Error al obtener la lista de rúbricas: {e}"
-            return None
-
-    def create_assignment(self, course_id: int, assignment_settings: dict):
-        """
-        Crea una nueva actividad (assignment) en el curso.
-        """
+    def create_assignment(self, course_id: int, assignment_settings: dict) -> bool:
         logger.info(f"Intentando crear actividad con configuración: {assignment_settings}")
-        if not self.canvas:
-            return False
-
+        if not self.canvas: return False
         try:
             course = self.get_course(course_id)
             if course:
