@@ -4,11 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="feat: Implementa la creación de actividades (assignments)">
+    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="eat(rubrics): Implementación de importación avanzada y rediseño de UI&#10;&#10;Se ha realizado una refactorización completa del módulo de rúbricas y de la interfaz principal para mejorar la funcionalidad y la experiencia de usuario.&#10;&#10;Mejoras en la Interfaz de Usuario:&#10;- Se rediseña el menú principal a un estilo de dashboard con tarjetas interactivas, mejorando la estética y el uso del espacio.&#10;- Se modulariza la interfaz, moviendo la lógica de Quizzes, Rúbricas y Actividades a sus propios archivos de submenú.&#10;- Se mejora el diseño de la pestaña de creación de rúbricas para una mejor distribución de los elementos.&#10;&#10;Nuevas Funcionalidades en Rúbricas:&#10;- Se implementa la capacidad de importar rúbricas desde archivos en formato CSV y JSON.&#10;- Se añaden opciones avanzadas en el formulario de creación (comentarios libres, ocultar puntuación, propósito).&#10;&#10;Mejoras en la API y Corrección de Errores:&#10;- Se refactoriza la función `create_rubric` en `canvas_client.py` para manejar la creación de rúbricas complejas con múltiples niveles de calificación.&#10;- Se soluciona un error crítico `500 Internal Server Error` al descubrir y aplicar la estructura de payload correcta (diccionarios anidados para criterios y ratings) que espera la API de Canvas.&#10;- Se corrigen múltiples errores de `AttributeError` y `ValueError` relacionados con el parseo de datos importados y la interacción con la API.&#10;&#10;Actualización de Documentación:&#10;- Se actualiza el archivo `Readme.md` para reflejar la nueva estructura del proyecto, las características añadidas y las mejoras implementadas.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Readme.md" beforeDir="false" afterPath="$PROJECT_DIR$/Readme.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/gui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/canvas_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/canvas_client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/gui/rubrics_menu.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/rubrics_menu.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -58,7 +57,7 @@
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "master",
+    "git-widget-placeholder": "feature/rubrics-builder",
     "last_opened_file_path": "C:/Users/koska/OneDrive/Documentos/PROYECTOS_PROGRAMACION_OSKAR/canvas_auto/assets/icons",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -98,7 +97,11 @@
       <workItem from="1753945307297" duration="72000" />
       <workItem from="1753977150415" duration="4576000" />
       <workItem from="1754057567891" duration="3259000" />
-      <workItem from="1754313096641" duration="1806000" />
+      <workItem from="1754313096641" duration="1860000" />
+      <workItem from="1754323434094" duration="2198000" />
+      <workItem from="1754484666009" duration="677000" />
+      <workItem from="1754549097721" duration="4408000" />
+      <workItem from="1754638804204" duration="4991000" />
     </task>
     <task id="LOCAL-00001" summary="Implementa flujo de login y selección de curso">
       <option name="closed" value="true" />
@@ -148,11 +151,38 @@
       <option name="project" value="LOCAL" />
       <updated>1754060821704</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="feat(UI): Rediseño del menú principal a un estilo de dashboard&#10;&#10;Se ha rediseñado por completo la ventana principal de la aplicación para mejorar la estética y la experiencia de usuario.&#10;&#10;- Se elimina la antigua interfaz de pestañas (TabView).&#10;- Se implementa un menú principal con un sistema de tarjetas interactivas (2x2 grid) que se expanden para ocupar el espacio disponible.&#10;- Se modulariza la interfaz, moviendo la lógica de Quizzes, Rúbricas y Actividades a sus propios módulos de submenú (`quizzes_menu.py`, `rubrics_menu.py`, `activities_menu.py`).&#10;- Se añade un menú principal centralizado en `main_window.py` que gestiona la navegación entre los submenús.&#10;- Se implementa la funcionalidad para volver al menú de selección de curso sin reiniciar la aplicación.&#10;- Se añaden iconos personalizados para cada tarjeta del menú, mejorando el aspecto visual.&#10;- Se actualiza el archivo `Readme.md` para reflejar los cambios en la estructura y las nuevas características de la interfaz.">
+      <option name="closed" value="true" />
+      <created>1754314955081</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1754314955081</updated>
+    </task>
+    <task id="LOCAL-00008" summary="eat(rubrics): Implementación de importación avanzada y rediseño de UI&#10;&#10;Se ha realizado una refactorización completa del módulo de rúbricas y de la interfaz principal para mejorar la funcionalidad y la experiencia de usuario.&#10;&#10;Mejoras en la Interfaz de Usuario:&#10;- Se rediseña el menú principal a un estilo de dashboard con tarjetas interactivas, mejorando la estética y el uso del espacio.&#10;- Se modulariza la interfaz, moviendo la lógica de Quizzes, Rúbricas y Actividades a sus propios archivos de submenú.&#10;- Se mejora el diseño de la pestaña de creación de rúbricas para una mejor distribución de los elementos.&#10;&#10;Nuevas Funcionalidades en Rúbricas:&#10;- Se implementa la capacidad de importar rúbricas desde archivos en formato CSV y JSON.&#10;- Se añaden opciones avanzadas en el formulario de creación (comentarios libres, ocultar puntuación, propósito).&#10;&#10;Mejoras en la API y Corrección de Errores:&#10;- Se refactoriza la función `create_rubric` en `canvas_client.py` para manejar la creación de rúbricas complejas con múltiples niveles de calificación.&#10;- Se soluciona un error crítico `500 Internal Server Error` al descubrir y aplicar la estructura de payload correcta (diccionarios anidados para criterios y ratings) que espera la API de Canvas.&#10;- Se corrigen múltiples errores de `AttributeError` y `ValueError` relacionados con el parseo de datos importados y la interacción con la API.&#10;&#10;Actualización de Documentación:&#10;- Se actualiza el archivo `Readme.md` para reflejar la nueva estructura del proyecto, las características añadidas y las mejoras implementadas.">
+      <option name="closed" value="true" />
+      <created>1754555342921</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1754555342921</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Implementa flujo de login y selección de curso" />
@@ -161,11 +191,13 @@
     <MESSAGE value="fix(api): Corrige la obtención de Nuevos Quizzes usando el endpoint correcto" />
     <MESSAGE value="ix(api): Corrige la creación de rúbricas usando requests directamente&quot;" />
     <MESSAGE value="feat: Implementa la creación de actividades (assignments)" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: Implementa la creación de actividades (assignments)" />
+    <MESSAGE value="feat(UI): Rediseño del menú principal a un estilo de dashboard&#10;&#10;Se ha rediseñado por completo la ventana principal de la aplicación para mejorar la estética y la experiencia de usuario.&#10;&#10;- Se elimina la antigua interfaz de pestañas (TabView).&#10;- Se implementa un menú principal con un sistema de tarjetas interactivas (2x2 grid) que se expanden para ocupar el espacio disponible.&#10;- Se modulariza la interfaz, moviendo la lógica de Quizzes, Rúbricas y Actividades a sus propios módulos de submenú (`quizzes_menu.py`, `rubrics_menu.py`, `activities_menu.py`).&#10;- Se añade un menú principal centralizado en `main_window.py` que gestiona la navegación entre los submenús.&#10;- Se implementa la funcionalidad para volver al menú de selección de curso sin reiniciar la aplicación.&#10;- Se añaden iconos personalizados para cada tarjeta del menú, mejorando el aspecto visual.&#10;- Se actualiza el archivo `Readme.md` para reflejar los cambios en la estructura y las nuevas características de la interfaz." />
+    <MESSAGE value="eat(rubrics): Implementación de importación avanzada y rediseño de UI&#10;&#10;Se ha realizado una refactorización completa del módulo de rúbricas y de la interfaz principal para mejorar la funcionalidad y la experiencia de usuario.&#10;&#10;Mejoras en la Interfaz de Usuario:&#10;- Se rediseña el menú principal a un estilo de dashboard con tarjetas interactivas, mejorando la estética y el uso del espacio.&#10;- Se modulariza la interfaz, moviendo la lógica de Quizzes, Rúbricas y Actividades a sus propios archivos de submenú.&#10;- Se mejora el diseño de la pestaña de creación de rúbricas para una mejor distribución de los elementos.&#10;&#10;Nuevas Funcionalidades en Rúbricas:&#10;- Se implementa la capacidad de importar rúbricas desde archivos en formato CSV y JSON.&#10;- Se añaden opciones avanzadas en el formulario de creación (comentarios libres, ocultar puntuación, propósito).&#10;&#10;Mejoras en la API y Corrección de Errores:&#10;- Se refactoriza la función `create_rubric` en `canvas_client.py` para manejar la creación de rúbricas complejas con múltiples niveles de calificación.&#10;- Se soluciona un error crítico `500 Internal Server Error` al descubrir y aplicar la estructura de payload correcta (diccionarios anidados para criterios y ratings) que espera la API de Canvas.&#10;- Se corrigen múltiples errores de `AttributeError` y `ValueError` relacionados con el parseo de datos importados y la interacción con la API.&#10;&#10;Actualización de Documentación:&#10;- Se actualiza el archivo `Readme.md` para reflejar la nueva estructura del proyecto, las características añadidas y las mejoras implementadas." />
+    <option name="LAST_COMMIT_MESSAGE" value="eat(rubrics): Implementación de importación avanzada y rediseño de UI&#10;&#10;Se ha realizado una refactorización completa del módulo de rúbricas y de la interfaz principal para mejorar la funcionalidad y la experiencia de usuario.&#10;&#10;Mejoras en la Interfaz de Usuario:&#10;- Se rediseña el menú principal a un estilo de dashboard con tarjetas interactivas, mejorando la estética y el uso del espacio.&#10;- Se modulariza la interfaz, moviendo la lógica de Quizzes, Rúbricas y Actividades a sus propios archivos de submenú.&#10;- Se mejora el diseño de la pestaña de creación de rúbricas para una mejor distribución de los elementos.&#10;&#10;Nuevas Funcionalidades en Rúbricas:&#10;- Se implementa la capacidad de importar rúbricas desde archivos en formato CSV y JSON.&#10;- Se añaden opciones avanzadas en el formulario de creación (comentarios libres, ocultar puntuación, propósito).&#10;&#10;Mejoras en la API y Corrección de Errores:&#10;- Se refactoriza la función `create_rubric` en `canvas_client.py` para manejar la creación de rúbricas complejas con múltiples niveles de calificación.&#10;- Se soluciona un error crítico `500 Internal Server Error` al descubrir y aplicar la estructura de payload correcta (diccionarios anidados para criterios y ratings) que espera la API de Canvas.&#10;- Se corrigen múltiples errores de `AttributeError` y `ValueError` relacionados con el parseo de datos importados y la interacción con la API.&#10;&#10;Actualización de Documentación:&#10;- Se actualiza el archivo `Readme.md` para reflejar la nueva estructura del proyecto, las características añadidas y las mejoras implementadas." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/canvas_auto$course_window.coverage" NAME="course_window Coverage Results" MODIFIED="1753873132715" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
     <SUITE FILE_PATH="coverage/canvas_auto$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1754314119580" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
-    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1754314737903" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1754644067554" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
