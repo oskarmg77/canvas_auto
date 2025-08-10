@@ -20,6 +20,20 @@ class CanvasClient:
     • Exportación de rúbricas a CSV
     """
 
+    @staticmethod
+    def _sanitize_url(raw: str) -> str:
+        return (raw or "").strip().rstrip("/")
+
+    @staticmethod
+    def _sanitize_token(raw: str) -> str:
+        t = (raw or "")
+        # quita prefijo "Bearer " si el usuario lo pegó
+        if t.lower().startswith("bearer "):
+            t = t[7:]
+        # elimina TODOS los espacios/blancos (incl. \r \n \t)
+        t = re.sub(r"\s+", "", t)
+        return t
+
     # --------------------------------------------------------------------- #
     # 1. Inicialización
     # --------------------------------------------------------------------- #
@@ -40,6 +54,13 @@ class CanvasClient:
             self.canvas = None
             self.error_message = f"No se pudo conectar a Canvas ({e})"
             logger.error(self.error_message)
+
+    def _auth_headers(self) -> dict:
+        # usa siempre el token saneado
+        return {
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json",
+        }
 
     # --------------------------------------------------------------------- #
     # 2. Rúbricas

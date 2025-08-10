@@ -7,6 +7,7 @@ import os
 import pyperclip
 from app.utils.logger_config import logger
 
+from app.utils.path_utils import resource_path
 
 class QuizzesMenu(ctk.CTkFrame):
     def __init__(self, parent, client, course_id, back_callback):
@@ -127,7 +128,7 @@ class QuizzesMenu(ctk.CTkFrame):
             messagebox.showerror("Error", self.client.error_message or "Ocurrió un error al crear el quiz.")
 
     def _show_quiz_prompt(self):
-        prompt_path = os.path.join("app", "resources", "prompt_ai_quiz.txt")
+        prompt_path = resource_path("app/resources/prompt_ai_quiz.txt")
         if not os.path.exists(prompt_path):
             messagebox.showerror("Error", f"No se encontró el archivo:\n{prompt_path}")
             return

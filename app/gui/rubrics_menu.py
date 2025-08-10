@@ -12,6 +12,9 @@ from canvasapi import rubric
 
 from app.utils.logger_config import logger
 
+from app.utils.path_utils import resource_path
+
+
 class CriterionFrame(ctk.CTkFrame):
     """
     Sub‑frame que representa un criterio con tabla de niveles (ratings).
@@ -124,7 +127,7 @@ class RubricsMenu(ctk.CTkFrame):
         self.setup_view_rubrics_tab()
 
     def _show_ai_prompt(self):
-        prompt_path = os.path.join("app", "resources", "prompt_ai_rubrica.txt")
+        prompt_path = resource_path("app/resources/prompt_ai_rubrica.txt")
         if not os.path.exists(prompt_path):
             messagebox.showerror("Error", f"No se encontró el archivo:\n{prompt_path}")
             return

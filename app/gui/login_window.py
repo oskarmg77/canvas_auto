@@ -3,6 +3,23 @@
 import customtkinter as ctk
 from app.utils import config_manager
 from app.utils.logger_config import logger # Importar el logger
+import re
+
+def _sanitize_url(raw: str) -> str:
+    return (raw or "").strip().rstrip("/")
+
+def _sanitize_token(raw: str) -> str:
+    """
+    Acepta que el usuario pegue 'Bearer ...' o desde PDF con saltos de línea.
+    Elimina espacios, tabs y saltos (\r\n) y quita el prefijo 'Bearer ' si viene.
+    """
+    t = (raw or "").strip()
+    if t.lower().startswith("bearer "):
+        t = t[7:]
+    # quita absolutamente todo el whitespace
+    t = re.sub(r"\s+", "", t)
+    return t
+
 
 class LoginWindow(ctk.CTk):
     def __init__(self):
@@ -32,15 +49,29 @@ class LoginWindow(ctk.CTk):
 
     def save_and_continue(self):
         logger.info("Botón 'Guardar y Continuar' (Login) pulsado.")
-        url = self.url_entry.get().strip()
-        token = self.token_entry.get().strip()
+
+        raw_url = self.url_entry.get()
+        raw_token = self.token_entry.get()
+
+        url = _sanitize_url(raw_url)
+        token = _sanitize_token(raw_token)
 
         if not url or not token:
             self.status_label.configure(text="Error: Ambos campos son obligatorios.")
             logger.warning("Intento de guardado en login con campos vacíos.")
             return
 
-        if config_manager.save_credentials(url, token):
+        # validación mínima de forma
+        if not re.match(r"^https?://", url):
+            self.status_label.configure(text="URL no válida. Debe empezar por http(s)://")
+            return
+        if len(token) < 20 or "~" not in token:
+            # los tokens de Canvas suelen ser 'nnnnn~...' (no es obligatorio, pero ayuda)
+            self.status_label.configure(text="Token con formato sospechoso. Revísalo.")
+            # no hacemos return: permitimos guardar por si tu instancia usa otro formato
+
+        ok = config_manager.save_credentials(url, token)
+        if ok:
             logger.info("Credenciales guardadas correctamente.")
             self.destroy()
         else:
