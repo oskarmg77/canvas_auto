@@ -12,16 +12,45 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
 * **Selección de Cursos**: Muestra una lista de los cursos activos del usuario para que seleccione con cuál desea trabajar, con la opción de cambiar de curso sin reiniciar la aplicación.
 * **Módulos de Gestión por Submenús**:
     * **Gestión de Quizzes**:
-        - Crear **Quizzes Clásicos** o **Nuevos Quizzes (New Quizzes)**.
-        - Visualizar una lista completa de los existentes.
+        -   Crear **Quizzes Clásicos** o **Nuevos Quizzes (New Quizzes)**.
+        -   **Creación masiva de preguntas** para "Nuevos Quizzes" a partir de un formato JSON, ideal para usar con la salida de herramientas de IA.
+        -   Visualizar una lista completa de los quizzes existentes, manejando la paginación de la API para garantizar que no falte ninguno.
     * **Gestión de Rúbricas**:
-        - Crear rúbricas a partir de texto, CSV o JSON.
-        - Soporte para **criterios con múltiples niveles de logro** (ratings).
-        - Admite **valores decimales** en puntuaciones, con coma o punto.
-        - Importar rúbricas desde **CSV exportados de Canvas** o creados manualmente.
-        - Exportar rúbricas existentes del curso a **CSV compatible** para su reutilización.
+        -   Crear rúbricas a partir de texto, CSV o JSON.
+        -   Soporte para **criterios con múltiples niveles de logro** (ratings).
+        -   Admite **valores decimales** en puntuaciones, con coma o punto.
+        -   Importar rúbricas desde **CSV exportados de Canvas** o creados manualmente.
+        -   Exportar rúbricas existentes del curso a **CSV compatible** para su reutilización.
     * **Gestión de Actividades**:
-        - Crear tareas definiendo nombre, puntos, descripción y tipos de entrega online.
+        -   Crear tareas definiendo nombre, puntos, descripción y tipos de entrega online.
+
+### Formato JSON para Preguntas de Quiz
+
+Para usar la creación masiva de preguntas, proporciona un JSON con la siguiente estructura. Puedes pegar una lista de preguntas `[...]` o un objeto `{"items": [...]}`.
+
+El siguiente ejemplo muestra todos los campos disponibles:
+
+```json
+{
+  "items": [
+    {
+      "question": "Texto de la pregunta principal (ej: ¿Cuál es la capital de España?)",
+      "choices": [
+        "Barcelona",
+        "Madrid",
+        "Lisboa",
+        "Sevilla"
+      ],
+      "correct": "B",
+      "points": 1.5,
+      "feedback_correct": "¡Correcto! Madrid es la capital.",
+      "feedback_incorrect": "Respuesta incorrecta. La capital es Madrid.",
+      "answer_feedback": {
+        "C": "Lisboa es la capital de Portugal, no de España."
+      }
+    }
+  ]
+}
 
 
 ## Estructura del Proyecto 📂

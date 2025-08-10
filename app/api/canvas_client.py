@@ -1,6 +1,7 @@
 # app/api/canvas_client.py
 import json
 import csv
+import re
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any
@@ -234,5 +235,274 @@ class CanvasClient:
 
         except Exception as exc:
             self.error_message = f"No se pudo exportar rúbrica ({exc})"
+            logger.error(self.error_message, exc_info=True)
+            return False
+
+    # --------------------------------------------------------------------- #
+    # 4. Quizzes (Classic y New Quizzes)
+    # --------------------------------------------------------------------- #
+    def _auth_headers(self) -> dict:
+        return {
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json",
+        }
+
+    def _nq_base(self, course_id: int) -> str:
+        return f"{self.canvas_url}/api/quiz/v1/courses/{course_id}"
+
+    # -------- Classic Quizzes (API v1) ----------------------------------- #
+    def get_quizzes(self, course_id: int) -> list[dict] | None:
+        """
+        Lista Quizzes Clásicos del curso (API v1, canvasapi).
+        """
+        if not self.canvas:
+            return None
+        try:
+            course = self.canvas.get_course(course_id)
+            quizzes = course.get_quizzes()
+            out = []
+            for q in quizzes:
+                out.append({"id": q.id, "title": q.title, "type": "classic"})
+            return out
+        except Exception as exc:
+            self.error_message = f"No se pudieron obtener los quizzes clásicos: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def create_quiz(self, course_id: int, settings: dict) -> bool:
+        """
+        Crea un Quiz Clásico (API v1).
+        settings típicos: { 'title', 'description', 'quiz_type'='assignment', ... }
+        """
+        if not self.canvas:
+            return False
+        try:
+            course = self.canvas.get_course(course_id)
+            # canvasapi usa 'description' para el enunciado del quiz clásico
+            course.create_quiz(quiz={
+                "title": settings.get("title", ""),
+                "description": settings.get("description", ""),
+                "quiz_type": settings.get("quiz_type", "assignment"),
+                "published": settings.get("published", False),
+            })
+            return True
+        except Exception as exc:
+            self.error_message = f"No se pudo crear el quiz clásico: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return False
+
+    # -------- New Quizzes (quiz/v1) -------------------------------------- #
+    def get_new_quizzes(self, course_id: int) -> list[dict] | None:
+        """
+        Lista New Quizzes del curso (quiz/v1), manejando la paginación.
+        OJO: en New Quizzes el 'id' devuelto es el assignment_id usable en /items.
+        """
+        try:
+            all_new_quizzes = []  # 1. Lista para acumular los resultados
+            url = f"{self._nq_base(course_id)}/quizzes"
+
+            # 2. Bucle para seguir las páginas 'next' hasta que no haya más
+            while url:
+                r = requests.get(url, headers=self._auth_headers(), timeout=30)
+                r.raise_for_status()
+                data = r.json() or []
+
+                # 3. Acumular los quizzes de la página actual
+                all_new_quizzes.extend(
+                    [{"id": q.get("id"), "title": q.get("title"), "type": "new"} for q in data]
+                )
+
+                # 4. Buscar el enlace a la siguiente página en las cabeceras
+                # La librería 'requests' convenientemente parsea el header 'Link'
+                next_link = r.links.get('next')
+                if next_link:
+                    url = next_link.get('url')
+                else:
+                    url = None # 5. Si no hay más páginas, terminamos el bucle
+
+            return all_new_quizzes
+
+        except Exception as exc:
+            self.error_message = f"No se pudieron obtener los New Quizzes: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def create_new_quiz(self, course_id: int, settings: dict) -> bool:
+        """
+        Crea un New Quiz vacío (quiz/v1). Devuelve True/False.
+        """
+        try:
+            url = f"{self._nq_base(course_id)}/quizzes"
+            payload = {
+                "quiz": {
+                    "title": settings.get("title", ""),
+                    "instructions": settings.get("description", ""),
+                    "published": settings.get("published", False),
+                    # puedes pasar 'points_possible', 'grading_type', 'quiz_settings', etc.
+                }
+            }
+            r = requests.post(url, headers=self._auth_headers(), json=payload, timeout=30)
+            r.raise_for_status()
+            return True
+        except Exception as exc:
+            self.error_message = f"No se pudo crear el New Quiz: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return False
+
+    # ------------------- New Quizzes: crear ítems tipo test -------------- #
+    def _as_html_p(self, text: str) -> str:
+        text = (text or "").strip()
+        return f"<p>{text}</p>"
+
+    def _uuid(self) -> str:
+        return str(uuid.uuid4())
+
+    def _build_choice_item(self, q: dict, position: int, default_points: float = 1.0) -> dict:
+        """
+        Transforma una pregunta de entrada sencilla a la forma requerida por New Quizzes (choice).
+        Entrada esperada (flexible):
+          {
+            "question": "Texto de la pregunta",
+            "choices": ["A", "B", "C", "D"],
+            "correct": 1,                 # índice (0-based) o letra 'A'..'D' o el propio texto
+            "points": 1.0,                # opcional
+            "feedback_correct": "...",    # opcional (rich content admitido)
+            "feedback_incorrect": "...",  # opcional
+            "answer_feedback": {"B": "..."}  # opcional, por opción
+          }
+        """
+        title = q.get("title") or f"Pregunta {position}"
+        body = self._as_html_p(q.get("question", ""))
+
+        # Crear choices con UUID
+        raw_choices = q.get("choices", [])
+        choices = []
+        letter_map = {}  # 'A' -> uuid, 'B' -> uuid...
+        for i, txt in enumerate(raw_choices, start=1):
+            cid = self._uuid()
+            choices.append({
+                "id": cid,
+                "position": i,
+                "itemBody": self._as_html_p(str(txt)),
+            })
+            letter_map[chr(64 + i)] = cid  # A,B,C,...
+
+        # Resolver la correcta -> UUID
+        correct = q.get("correct")
+        correct_uuid = None
+        if isinstance(correct, int):
+            # índice 0-based
+            idx = max(0, min(len(choices) - 1, correct))
+            correct_uuid = choices[idx]["id"] if choices else None
+        elif isinstance(correct, str):
+            # letra ('A', 'b', ...) o texto exacto de la opción
+            c = correct.strip()
+            if c.upper() in letter_map:
+                correct_uuid = letter_map[c.upper()]
+            else:
+                # buscar por texto
+                for ch in choices:
+                    # quitar <p>...</p> para comparar
+                    plain = re.sub(r"<\/?p>", "", ch["itemBody"], flags=re.I).strip()
+                    if plain == c:
+                        correct_uuid = ch["id"]
+                        break
+
+        points = float(q.get("points", default_points) or default_points)
+
+        # Feedback por pregunta (correcto/incorrecto)
+        feedback = {}
+        if q.get("feedback_correct"):
+            feedback["correct"] = self._as_html_p(q["feedback_correct"])
+        if q.get("feedback_incorrect"):
+            feedback["incorrect"] = self._as_html_p(q["feedback_incorrect"])
+
+        # Feedback por respuesta (mapear a UUID -> html)
+        answer_feedback_in = q.get("answer_feedback", {}) or {}
+        answer_feedback = {}
+        for key, fb in answer_feedback_in.items():
+            # key puede ser letra, índice o texto
+            target_uuid = None
+            if isinstance(key, int):
+                if 0 <= key < len(choices):
+                    target_uuid = choices[key]["id"]
+            elif isinstance(key, str):
+                if key.upper() in letter_map:
+                    target_uuid = letter_map[key.upper()]
+                else:
+                    # por texto
+                    for ch in choices:
+                        plain = re.sub(r"<\/?p>", "", ch["itemBody"], flags=re.I).strip()
+                        if plain == key.strip():
+                            target_uuid = ch["id"]
+                            break
+            if target_uuid:
+                answer_feedback[target_uuid] = self._as_html_p(str(fb))
+
+        # Construir payload conforme a la doc oficial (choice)
+        return {
+            "item": {
+                "entry_type": "Item",
+                "points_possible": points,
+                "position": position,
+                "entry": {
+                    "interaction_type_slug": "choice",
+                    "title": title,
+                    "item_body": body,
+                    "calculator_type": "none",
+                    "interaction_data": {
+                        "choices": choices
+                    },
+                    "properties": {
+                        "shuffleRules": {
+                            "choices": {"toLock": [], "shuffled": True}
+                        },
+                        "varyPointsByAnswer": False
+                    },
+                    "scoring_data": {
+                        "value": correct_uuid
+                    },
+                    "scoring_algorithm": "Equivalence",
+                    # 'feedback' y 'answer_feedback' son opcionales
+                    **({"feedback": feedback} if feedback else {}),
+                    **({"answer_feedback": answer_feedback} if answer_feedback else {}),
+                }
+            }
+        }
+
+    def create_new_quiz_and_items(self, course_id: int, settings: dict, items: list[dict]) -> bool:
+        """
+        Crea un New Quiz y a continuación añade ítems tipo 'choice' (uno por POST).
+        'items' es una lista de dicts como los que espera _build_choice_item.
+        """
+        try:
+            # 1) Crear el New Quiz
+            url_quiz = f"{self._nq_base(course_id)}/quizzes"
+            payload_quiz = {"quiz": {
+                "title": settings.get("title", ""),
+                "instructions": settings.get("description", ""),
+                "published": settings.get("published", False),
+            }}
+            r = requests.post(url_quiz, headers=self._auth_headers(), json=payload_quiz, timeout=30)
+            r.raise_for_status()
+            quiz_obj = r.json() or {}
+            # En New Quizzes, el 'id' que devuelve es el assignment_id usable en /items
+            assignment_id = quiz_obj.get("id")
+            if not assignment_id:
+                self.error_message = "La API no devolvió un id para el New Quiz."
+                return False
+
+            # 2) Añadir cada ítem
+            url_items = f"{self._nq_base(course_id)}/quizzes/{assignment_id}/items"
+            for pos, q in enumerate(items, start=1):
+                item_payload = self._build_choice_item(q, position=pos)
+                r_item = requests.post(url_items, headers=self._auth_headers(),
+                                       json=item_payload, timeout=30)
+                r_item.raise_for_status()
+
+            return True
+
+        except Exception as exc:
+            self.error_message = f"No se pudieron crear los ítems del New Quiz: {exc}"
             logger.error(self.error_message, exc_info=True)
             return False

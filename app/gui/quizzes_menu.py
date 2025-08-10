@@ -1,7 +1,10 @@
 # app/gui/quizzes_menu.py
 
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, Toplevel, scrolledtext
+import json
+import os
+import pyperclip
 from app.utils.logger_config import logger
 
 
@@ -32,47 +35,120 @@ class QuizzesMenu(ctk.CTkFrame):
     # --- El resto del código es el que ya tenías en main_window.py, movido aquí ---
     def setup_quiz_tab(self):
         quiz_tab = self.tab_view.tab("Crear Quiz")
-        # ... (Copia y pega el código exacto de tu función `setup_quiz_tab` original aquí)
         quiz_tab.grid_columnconfigure(1, weight=1)
-        title_label = ctk.CTkLabel(quiz_tab, text="Título del Quiz:")
-        title_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
+
+        # Título
+        ctk.CTkLabel(quiz_tab, text="Título del Quiz:").grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
         self.quiz_title_entry = ctk.CTkEntry(quiz_tab, width=400)
         self.quiz_title_entry.grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
-        type_label = ctk.CTkLabel(quiz_tab, text="Tipo de Quiz:")
-        type_label.grid(row=1, column=0, padx=20, pady=10, sticky="w")
+
+        # Tipo
+        ctk.CTkLabel(quiz_tab, text="Tipo de Quiz:").grid(row=1, column=0, padx=20, pady=10, sticky="w")
         self.quiz_type_combobox = ctk.CTkComboBox(quiz_tab, values=["Quiz Clásico", "Nuevo Quiz"])
-        self.quiz_type_combobox.set("Quiz Clásico")
+        self.quiz_type_combobox.set("Nuevo Quiz")
         self.quiz_type_combobox.grid(row=1, column=1, padx=20, pady=10, sticky="w")
-        desc_label = ctk.CTkLabel(quiz_tab, text="Descripción / Instrucciones:")
-        desc_label.grid(row=2, column=0, padx=20, pady=10, sticky="nw")
-        self.quiz_desc_textbox = ctk.CTkTextbox(quiz_tab, height=200)
+
+        # Descripción
+        ctk.CTkLabel(quiz_tab, text="Descripción / Instrucciones:").grid(row=2, column=0, padx=20, pady=10, sticky="nw")
+        self.quiz_desc_textbox = ctk.CTkTextbox(quiz_tab, height=120)
         self.quiz_desc_textbox.grid(row=2, column=1, padx=20, pady=10, sticky="nsew")
         quiz_tab.grid_rowconfigure(2, weight=1)
-        create_button = ctk.CTkButton(quiz_tab, text="Crear Quiz", command=self.handle_create_quiz)
-        create_button.grid(row=3, column=1, padx=20, pady=20, sticky="e")
+
+        # Área para pegar JSON de preguntas (opcional)
+        ctk.CTkLabel(quiz_tab, text="Preguntas (JSON de IA):").grid(row=3, column=0, padx=20, pady=(10, 0), sticky="nw")
+        self.ai_json_textbox = ctk.CTkTextbox(quiz_tab, height=220)
+        self.ai_json_textbox.grid(row=3, column=1, padx=20, pady=(10, 10), sticky="nsew")
+        quiz_tab.grid_rowconfigure(3, weight=1)
+
+        # Botonera inferior
+        btns = ctk.CTkFrame(quiz_tab, fg_color="transparent")
+        btns.grid(row=4, column=1, padx=20, pady=10, sticky="e")
+
+        prompt_btn = ctk.CTkButton(btns, text="📋 Prompt IA", command=self._show_quiz_prompt)
+        prompt_btn.pack(side="left", padx=(0, 10))
+
+        create_button = ctk.CTkButton(btns, text="Crear Quiz", command=self.handle_create_quiz)
+        create_button.pack(side="left")
 
     def handle_create_quiz(self):
-        # ... (Copia y pega el código exacto de tu función `handle_create_quiz` original aquí)
         logger.info("Botón 'Crear Quiz' pulsado.")
-        title = self.quiz_title_entry.get()
+        title = self.quiz_title_entry.get().strip()
         description = self.quiz_desc_textbox.get("1.0", "end-1c")
         quiz_type_selection = self.quiz_type_combobox.get()
+
         if not title:
             messagebox.showwarning("Campo Requerido", "El título del quiz no puede estar vacío.")
             return
-        settings = {'title': title, 'description': description, 'published': False}
+
+        settings = {"title": title, "description": description, "published": False}
+
+        # ¿Hay JSON pegado?
+        raw = self.ai_json_textbox.get("1.0", "end-1c").strip()
+        items = []
+        if raw:
+            try:
+                data = json.loads(raw)
+                if isinstance(data, dict) and "items" in data:
+                    items = data["items"]
+                elif isinstance(data, list):
+                    items = data
+                else:
+                    raise ValueError("JSON no válido: usa lista de preguntas o {'items': [...]}.")
+
+                # Validación mínima
+                for i, q in enumerate(items, start=1):
+                    if "question" not in q or "choices" not in q:
+                        raise ValueError(f"Pregunta {i} incompleta: falta 'question' o 'choices'.")
+                    if not q["choices"]:
+                        raise ValueError(f"Pregunta {i}: 'choices' vacío.")
+            except Exception as exc:
+                messagebox.showerror("JSON inválido", f"No se pudo leer el JSON de preguntas:\n{exc}")
+                return
+
         success = False
         if quiz_type_selection == "Nuevo Quiz":
-            success = self.client.create_new_quiz(self.course_id, settings)
+            if items:
+                # crear New Quiz con preguntas
+                success = self.client.create_new_quiz_and_items(self.course_id, settings, items)
+            else:
+                # crear New Quiz vacío
+                success = self.client.create_new_quiz(self.course_id, settings)
         else:
-            settings['quiz_type'] = 'assignment'
+            # clásico (por ahora sin pegado masivo)
+            settings["quiz_type"] = "assignment"
             success = self.client.create_quiz(self.course_id, settings)
+
         if success:
             messagebox.showinfo("Éxito", f"El quiz '{title}' ha sido creado correctamente.")
             self.quiz_title_entry.delete(0, "end")
             self.quiz_desc_textbox.delete("1.0", "end")
+            self.ai_json_textbox.delete("1.0", "end")
         else:
             messagebox.showerror("Error", self.client.error_message or "Ocurrió un error al crear el quiz.")
+
+    def _show_quiz_prompt(self):
+        prompt_path = os.path.join("app", "resources", "prompt_ai_quiz.txt")
+        if not os.path.exists(prompt_path):
+            messagebox.showerror("Error", f"No se encontró el archivo:\n{prompt_path}")
+            return
+
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
+
+        win = Toplevel(self)
+        win.title("Prompt IA para New Quiz")
+        win.geometry("760x520")
+
+        txt = scrolledtext.ScrolledText(win, wrap="word", font=("Consolas", 10))
+        txt.insert("1.0", prompt_text)
+        txt.configure(state="disabled")
+        txt.pack(expand=True, fill="both", padx=10, pady=10)
+
+        def copy_to_clipboard():
+            pyperclip.copy(prompt_text)
+            messagebox.showinfo("Copiado", "Prompt copiado al portapapeles.")
+
+        ctk.CTkButton(win, text="📋 Copiar al portapapeles", command=copy_to_clipboard).pack(pady=6)
 
     def setup_view_quizzes_tab(self):
         # ... (Copia y pega el código exacto de tu función `setup_view_quizzes_tab` original aquí)
