@@ -1,10 +1,12 @@
 # app/gui/rubrics_menu.py
 
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, Toplevel, scrolledtext
 import json
 import csv
 import re
+import pyperclip
+import os
 
 from canvasapi import rubric
 
@@ -121,6 +123,32 @@ class RubricsMenu(ctk.CTkFrame):
         self.setup_create_rubric_tab()
         self.setup_view_rubrics_tab()
 
+    def _show_ai_prompt(self):
+        prompt_path = os.path.join("app", "resources", "prompt_ai_rubrica.txt")
+        if not os.path.exists(prompt_path):
+            messagebox.showerror("Error", f"No se encontró el archivo:\n{prompt_path}")
+            return
+
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
+
+        # Ventana emergente
+        win = Toplevel(self)
+        win.title("Prompt IA para Rúbrica")
+        win.geometry("700x500")
+
+        txt = scrolledtext.ScrolledText(win, wrap="word", font=("Consolas", 10))
+        txt.insert("1.0", prompt_text)
+        txt.configure(state="disabled")
+        txt.pack(expand=True, fill="both", padx=10, pady=10)
+
+        def copy_to_clipboard():
+            pyperclip.copy(prompt_text)
+            messagebox.showinfo("Copiado", "Prompt copiado al portapapeles.")
+
+        btn_copy = ctk.CTkButton(win, text="📋 Copiar al portapapeles", command=copy_to_clipboard)
+        btn_copy.pack(pady=5)
+
     def setup_create_rubric_tab(self):
         rubric_tab = self.tab_view.tab("Crear Rúbrica")
         rubric_tab.grid_columnconfigure(0, weight=1)
@@ -151,15 +179,21 @@ class RubricsMenu(ctk.CTkFrame):
         self.purpose_combo.set("grading")
         self.purpose_combo.grid(row=4, column=1, sticky="w", padx=8, pady=2)
 
-        # 4. Acciones
+        # 4. Acciones
         btn_frame = ctk.CTkFrame(rubric_tab, fg_color="transparent")
-        btn_frame.grid(row=5, column=0, columnspan=2, sticky="e", pady=10, padx=8)
+        btn_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=10, padx=8)
 
-        import_btn = ctk.CTkButton(btn_frame, text="Importar Rúbrica", command=self.handle_import_rubric)
-        import_btn.pack(side="left", padx=(0, 10))
+        # que el frame de botones se estire a lo ancho
+        btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-        create_btn = ctk.CTkButton(btn_frame, text="Crear Rúbrica", command=self.handle_create_rubric)
-        create_btn.pack(side="left")
+        import_btn = ctk.CTkButton(btn_frame, text="Importar Rúbrica", command=self.handle_import_rubric)
+        create_btn = ctk.CTkButton(btn_frame, text="Crear Rúbrica", command=self.handle_create_rubric)
+        prompt_btn = ctk.CTkButton(btn_frame, text="📋 Prompt IA", command=self._show_ai_prompt)
+
+        # distribución uniforme en 3 columnas
+        import_btn.grid(row=0, column=0, padx=6, pady=5, sticky="ew")
+        create_btn.grid(row=0, column=1, padx=6, pady=5, sticky="ew")
+        prompt_btn.grid(row=0, column=2, padx=6, pady=5, sticky="ew")
 
         #  Vista previa mínima (opcional, puedes ampliar)
         self.preview = ctk.CTkLabel(rubric_tab, text="")

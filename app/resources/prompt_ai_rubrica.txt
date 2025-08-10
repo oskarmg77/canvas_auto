@@ -1,0 +1,41 @@
+Genera una rúbrica para Canvas LMS en formato JSON exactamente como el siguiente esquema.
+
+Actividad: [Describe aquí la actividad]
+Número de criterios: [número]
+Criterios: [lista de criterios]
+Niveles por criterio: [lista de niveles con puntos]
+Puntuación máxima por criterio: [valor numérico]
+
+Formato EXACTO de salida (respetar llaves, nombres de campos y tipos de datos):
+{
+  "rubric": {
+    "title": "Título de la rúbrica",
+    "free_form_criterion_comments": false,
+    "criteria": {
+      "0": {
+        "description": "Descripción corta",
+        "long_description": "Descripción larga",
+        "points": 5,
+        "criterion_use_range": false,
+        "ratings": [
+          { "description": "Nivel 1", "long_description": "", "points": 5 },
+          { "description": "Nivel 2", "long_description": "", "points": 4 }
+        ]
+      }
+    }
+  },
+  "rubric_association": {
+    "association_id": 1234,
+    "association_type": "Course",
+    "use_for_grading": false,
+    "purpose": "bookmark",
+    "hide_score_total": false
+  }
+}
+
+Reglas importantes:
+1. No añadir texto antes ni después del JSON.
+2. Las claves de "criteria" deben ser cadenas "0", "1", "2", etc.
+3. Todos los puntos ("points") deben ser numéricos.
+4. "association_type" debe ser "Course".
+5. El JSON debe ser válido y parseable.
