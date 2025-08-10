@@ -1,0 +1,32 @@
+Genera un examen de opción múltiple para Canvas New Quizzes y devuélvelo EXCLUSIVAMENTE en JSON válido, sin texto adicional, sin Markdown ni ```.
+
+Parámetros:
+- Tema: [describe el tema aquí]
+- Número de preguntas: 10
+- Opciones por pregunta: 4
+- Idioma: Español (España)
+
+Formato EXACTO de salida:
+{
+  "items": [
+    {
+      "question": "Texto de la pregunta",
+      "choices": ["Opción A", "Opción B", "Opción C", "Opción D"],
+      "correct": "A",
+      "points": 1
+    }
+  ]
+}
+
+Reglas:
+1) Usa comillas ASCII dobles " en todo el JSON.
+2) "items" debe contener exactamente 10 objetos.
+3) En cada objeto:
+   - "question": string (sin numeración ni etiquetas).
+   - "choices": array de 4 strings; no repitas opciones; no antepongas A) B)...
+   - "correct": una letra A/B/C/D que coincida con la opción correcta.
+   - "points": número (por defecto 1).
+4) No incluyas soluciones al final, ni explicaciones, ni claves extra.
+5) No uses Markdown, HTML ni tipografía especial.
+
+Devuelve SOLO el JSON.
