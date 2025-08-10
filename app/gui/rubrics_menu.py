@@ -4,6 +4,7 @@ import customtkinter as ctk
 from tkinter import messagebox, filedialog
 import json
 import csv
+import re
 
 from canvasapi import rubric
 
@@ -66,21 +67,36 @@ class CriterionFrame(ctk.CTkFrame):
 
     # ---------- public ----------
     def to_dict(self):
+        """
+        Convierte el criterio y sus niveles (ratings) a dict listo para enviar a la API de Canvas.
+        Soporta puntos decimales con punto o coma.
+        """
+
+        def _parse_points(v):
+            s = (v or "").strip()
+            if not s:
+                return 0.0
+            s = s.replace(",", ".")
+            try:
+                return float(s)
+            except ValueError:
+                return 0.0
+
+        # Recoger niveles desde self._ratings
         ratings = []
         for _, r in self._ratings:
-            if not r["desc"].get():  # nivel vacío → ignorar
-                continue
-            ratings.append(
-                {
-                    "description": r["desc"].get(),
-                    "points": int(r["points"].get() or 0),
-                }
-            )
+            ratings.append({
+                "description": r["desc"].get().strip(),
+                "long_description": "",
+                "points": _parse_points(r["points"].get())
+            })
+
         return {
-            "description": self.desc.get(),
-            "long_description": self.long.get(),
-            "points": int(self.points.get() or 0),
-            "ratings": ratings,
+            "description": self.desc.get().strip(),
+            "long_description": self.long.get().strip(),
+            "points": _parse_points(self.points.get()),
+            "criterion_use_range": False,
+            "ratings": ratings
         }
 
 
@@ -158,6 +174,19 @@ class RubricsMenu(ctk.CTkFrame):
         # nada especial, se destruye desde la propia clase
         pass
 
+    def _num(self, s) -> float:
+        """
+        Convierte un valor de puntos a float.
+        Acepta '2.5', '2,5', '', None. Devuelve 0.0 si no es parseable.
+        """
+        if s is None:
+            return 0.0
+        txt = str(s).strip().replace(",", ".")
+        try:
+            return float(txt) if txt else 0.0
+        except ValueError:
+            return 0.0
+
     # -----------------------------------------------------------
     #  IMPORTACIÓN CSV / JSON
     # -----------------------------------------------------------
@@ -205,42 +234,138 @@ class RubricsMenu(ctk.CTkFrame):
         else:
             return []
 
-    def _load_csv(self, path: str) -> list[dict]:
+    def _load_csv(self, file_path):
         """
-        CSV en formato Canvas:
-        Rubric Name,Criteria Name,Criteria Description,Criteria Points,
-        Rating 1 Name,Rating 1 Description,Rating 1 Points,...
+        Lee CSVs de rúbricas:
+          - Formato oficial Canvas (RubricsApiController#download_rubrics)
+          - Cualquier variante que ponga Ratings en bloques de 3 columnas
+        Acepta decimales con coma o punto. Si no hay "Criteria Points", usa el
+        máximo de los puntos de los ratings como puntos del criterio.
         """
-        criteria: dict[str, dict] = {}
-        with open(path, newline="", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            headers = next(reader, [])
-            # localiza la posición del primer rating
-            first_rating_idx = next((i for i, h in enumerate(headers) if h.strip().startswith("Rating")), None)
 
-            for row in reader:
-                if not row or len(row) < 4:
-                    continue
-                desc = row[1].strip()
-                criteria_row = {
-                    "description": desc,
-                    "long_description": row[2].strip(),
-                    "points": int(row[3].strip() or 0),
-                    "ratings": []
-                }
-                # procesa ratings
-                if first_rating_idx is not None:
-                    r_cols = row[first_rating_idx:]
-                    for i in range(0, len(r_cols), 3):
-                        if i + 2 >= len(r_cols) or not r_cols[i].strip():
-                            continue
-                        criteria_row["ratings"].append({
-                            "description": r_cols[i].strip(),
-                            "long_description": r_cols[i + 1].strip(),
-                            "points": int(r_cols[i + 2].strip() or 0)
+        def _fnum(s):
+            s = (s or "").strip()
+            if not s:
+                return 0.0
+            s = s.replace(",", ".")
+            try:
+                return float(s)
+            except ValueError:
+                return 0.0
+
+        criteria = {}
+        with open(file_path, "r", encoding="utf-8-sig", newline="") as f:
+            rdr = csv.reader(f)
+            rows = list(rdr)
+
+        if not rows:
+            return []
+
+        header = [h.strip() for h in rows[0]]
+
+        # Detectamos si es el CSV "oficial" de Canvas
+        is_canvas_official = (
+                len(header) >= 4 and
+                header[0] == "Rubric Name" and
+                header[1] == "Criteria Name" and
+                header[2] == "Criteria Description" and
+                header[3] == "Criteria Enable Range"
+        )
+
+        # También intentamos detectar si hay columnas de "Rating Name/Description/Points"
+        # Pueden venir repetidas: Rating Name, Rating Description, Rating Points, Rating Name, ...
+        def _rating_triplets_from_header(hdr):
+            idxs = []
+            i = 0
+            while i < len(hdr) - 2:
+                if (hdr[i].startswith("Rating Name") and
+                        hdr[i + 1].startswith("Rating Description") and
+                        hdr[i + 2].startswith("Rating Points")):
+                    idxs.append((i, i + 1, i + 2))
+                    i += 3
+                else:
+                    i += 1
+            return idxs
+
+        rating_triplets = _rating_triplets_from_header(header) if is_canvas_official else []
+
+        # Recorremos filas de datos
+        for row in rows[1:]:
+            # Limpieza de longitud
+            if not any(cell.strip() for cell in row):
+                continue
+            # Asegura largo mínimo
+            row = row + [""] * max(0, len(header) - len(row))
+
+            if is_canvas_official:
+                crit_name = row[1].strip()
+                crit_desc = row[2].strip()
+                use_range_raw = row[3].strip().lower()
+                criterion_use_range = use_range_raw in ("true", "1", "yes", "y", "t", "verdadero", "sí", "si")
+
+                # Construir ratings desde los tripletes
+                ratings = []
+                for (i_name, i_desc, i_pts) in rating_triplets:
+                    name = (row[i_name] if i_name < len(row) else "").strip()
+                    desc = (row[i_desc] if i_desc < len(row) else "").strip()
+                    pts = _fnum(row[i_pts] if i_pts < len(row) else "")
+                    if name or desc or pts:
+                        ratings.append({
+                            "description": name,
+                            "long_description": desc,
+                            "points": pts
                         })
-                criteria[desc] = criteria_row
-        return list(criteria.values())
+
+                # Puntos del criterio: si no hay columna propia, tomamos el máximo de ratings
+                points = max((r["points"] for r in ratings), default=0.0)
+
+            else:
+                # Formatos alternativos (tu export antiguo). Intentamos heurística:
+                # 0: Rubric Name / 1: Criteria Name / 2: Criteria Description / 3: puede ser points o enable_range
+                crit_name = (row[1] if len(row) > 1 else "").strip()
+                crit_desc = (row[2] if len(row) > 2 else "").strip()
+                col3 = (row[3] if len(row) > 3 else "").strip()
+
+                # ¿col3 parece booleano? entonces es enable_range y no puntos
+                if col3.lower() in ("true", "false", "1", "0", "yes", "no", "t", "f", "verdadero", "falso", "sí", "si"):
+                    criterion_use_range = col3.lower() in ("true", "1", "yes", "t", "verdadero", "sí", "si")
+                    points = 0.0
+                    start = 4
+                else:
+                    criterion_use_range = False
+                    points = _fnum(col3)
+                    start = 4
+
+                # A partir de 'start', leemos tripletes (name, desc, pts) si existen
+                ratings = []
+                i = start
+                while i + 2 < len(row):
+                    name = row[i].strip()
+                    desc = row[i + 1].strip()
+                    pts = _fnum(row[i + 2])
+                    if name or desc or pts:
+                        ratings.append({
+                            "description": name,
+                            "long_description": desc,
+                            "points": pts
+                        })
+                    i += 3
+
+                # Si no hay puntos de criterio, usamos el máximo de ratings
+                if points == 0.0 and ratings:
+                    points = max((r["points"] for r in ratings), default=0.0)
+
+            # Guardamos el criterio
+            criteria[len(criteria)] = {
+                "description": crit_name,
+                "long_description": crit_desc,
+                "points": points,
+                "criterion_use_range": criterion_use_range,
+                "ratings": ratings,
+            }
+
+        # Devolvemos en la misma estructura que espera tu creador
+        return [{"id": str(k), **v} for k, v in criteria.items()]
 
     def import_from_json(self, file_path):
         """
@@ -315,18 +440,17 @@ class RubricsMenu(ctk.CTkFrame):
             messagebox.showwarning("Título vacío", "Escribe un título para la rúbrica.")
             return
 
-        # ❶ Si se importó un archivo y el usuario no tocó nada más,
+        # ❶ Si se importó un archivo y el usuario no tocó nada más,
         #    usa directamente esa lista de criterios
         if self.imported_criteria:
             criteria = self.imported_criteria
         else:
-            # ❷ Recoge lo que haya en el constructor visual
-            criteria = [child.to_dict() for child in self.criteria_frame.winfo_children()
-                        if isinstance(child, CriterionFrame) and child.desc.get().strip()]
-
-
-        criteria = [child.to_dict() for child in self.criteria_frame.winfo_children()
-                    if isinstance(child, CriterionFrame)]
+            # ❷ Recoge lo que haya en el constructor visual usando to_dict() corregido
+            criteria = [
+                child.to_dict()
+                for child in self.criteria_frame.winfo_children()
+                if isinstance(child, CriterionFrame) and child.desc.get().strip()
+            ]
 
         if not criteria:
             messagebox.showwarning("Campo obligatorio", "Añade al menos un criterio.")

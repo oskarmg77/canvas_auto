@@ -1,27 +1,27 @@
-# app/utils/logger_config.py
-
 import logging
-import os
+import sys
 
-def setup_logger():
-    """
-    Configura un logger para registrar eventos de la aplicación en un archivo.
-    """
-    # Crear el directorio de logs si no existe
-    if not os.path.exists('logs'):
-        os.makedirs('logs')
+# Crea el logger principal
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
-    # Configuración básica del logger
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler("logs/canvas_auto.log"), # Guarda los logs en un archivo
-            logging.StreamHandler() # Muestra los logs en la consola
-        ]
+# Formato para los mensajes
+formatter = logging.Formatter(
+    "%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+# Handler para consola
+console_handler = logging.StreamHandler(sys.stdout)
+
+# Forzar UTF-8 en consola para que acepte ✔, ✖ y otros símbolos
+try:
+    console_handler.stream.reconfigure(encoding='utf-8')
+except AttributeError:
+    import io
+    console_handler.stream = io.TextIOWrapper(
+        sys.stdout.buffer, encoding='utf-8', errors='replace'
     )
 
-    return logging.getLogger(__name__)
-
-# Crear una única instancia del logger para ser importada por otros módulos
-logger = setup_logger()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
