@@ -6,7 +6,7 @@ import customtkinter as ctk
 from tkinter import messagebox
 from app.utils.logger_config import logger
 
-# Adds the project root directory to Python's path to find the 'app' package
+# Añade el directorio raíz del proyecto al path de Python para encontrar el paquete 'app'
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(project_root)
 
