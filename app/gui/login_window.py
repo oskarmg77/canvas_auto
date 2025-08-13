@@ -1,32 +1,16 @@
 # app/gui/login_window.py
 
 import customtkinter as ctk
+import webbrowser
 from app.utils import config_manager
 from app.utils.logger_config import logger # Importar el logger
 import re
 
-def _sanitize_url(raw: str) -> str:
-    return (raw or "").strip().rstrip("/")
-
-def _sanitize_token(raw: str) -> str:
-    """
-    Acepta que el usuario pegue 'Bearer ...' o desde PDF con saltos de línea.
-    Elimina espacios, tabs y saltos (\r\n) y quita el prefijo 'Bearer ' si viene.
-    """
-    t = (raw or "").strip()
-    if t.lower().startswith("bearer "):
-        t = t[7:]
-    # quita absolutamente todo el whitespace
-    t = re.sub(r"\s+", "", t)
-    return t
-
-
 class LoginWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
-        # ... (código del constructor sin cambios)
         self.title("Configuración Inicial - Canvas Auto")
-        self.geometry("400x250")
+        self.geometry("400x300")
         self.resizable(False, False)
         self.grid_columnconfigure(0, weight=1)
         main_frame = ctk.CTkFrame(self)
@@ -42,10 +26,30 @@ class LoginWindow(ctk.CTk):
         token_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
         self.token_entry = ctk.CTkEntry(main_frame, show="*")
         self.token_entry.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
+        self.tutorial_button = ctk.CTkButton(main_frame, text="Ayuda para generar token", command=self.open_token_tutorial)
+        self.tutorial_button.grid(row=3, column=0, columnspan=2, pady=(10, 0))
         self.save_button = ctk.CTkButton(main_frame, text="Guardar y Continuar", command=self.save_and_continue)
-        self.save_button.grid(row=3, column=0, columnspan=2, pady=(20, 0))
+        self.save_button.grid(row=4, column=0, columnspan=2, pady=(20, 0))
         self.status_label = ctk.CTkLabel(main_frame, text="", text_color="red")
-        self.status_label.grid(row=4, column=0, columnspan=2, pady=(10, 0))
+        self.status_label.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+
+    def open_token_tutorial(self):
+        webbrowser.open("https://youtu.be/mUoPJSxzMW4")
+
+    def _sanitize_url(self, raw: str) -> str:
+        return (raw or "").strip().rstrip("/")
+
+    def _sanitize_token(self, raw: str) -> str:
+        """
+        Acepta que el usuario pegue 'Bearer ...' o desde PDF con saltos de línea.
+        Elimina espacios, tabs y saltos (\r\n) y quita el prefijo 'Bearer ' si viene.
+        """
+        t = (raw or "").strip()
+        if t.lower().startswith("bearer "):
+            t = t[7:]
+        # quita absolutamente todo el whitespace
+        t = re.sub(r"\s+", "", t)
+        return t
 
     def save_and_continue(self):
         logger.info("Botón 'Guardar y Continuar' (Login) pulsado.")
@@ -53,8 +57,8 @@ class LoginWindow(ctk.CTk):
         raw_url = self.url_entry.get()
         raw_token = self.token_entry.get()
 
-        url = _sanitize_url(raw_url)
-        token = _sanitize_token(raw_token)
+        url = self._sanitize_url(raw_url)
+        token = self._sanitize_token(raw_token)
 
         if not url or not token:
             self.status_label.configure(text="Error: Ambos campos son obligatorios.")

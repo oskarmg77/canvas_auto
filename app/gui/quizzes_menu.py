@@ -33,7 +33,6 @@ class QuizzesMenu(ctk.CTkFrame):
         self.setup_quiz_tab()
         self.setup_view_quizzes_tab()
 
-    # --- El resto del código es el que ya tenías en main_window.py, movido aquí ---
     def setup_quiz_tab(self):
         quiz_tab = self.tab_view.tab("Crear Quiz")
         quiz_tab.grid_columnconfigure(1, weight=1)
@@ -83,7 +82,6 @@ class QuizzesMenu(ctk.CTkFrame):
 
         settings = {"title": title, "description": description, "published": False}
 
-        # ¿Hay JSON pegado?
         raw = self.ai_json_textbox.get("1.0", "end-1c").strip()
         items = []
         if raw:
@@ -96,7 +94,6 @@ class QuizzesMenu(ctk.CTkFrame):
                 else:
                     raise ValueError("JSON no válido: usa lista de preguntas o {'items': [...]}.")
 
-                # Validación mínima
                 for i, q in enumerate(items, start=1):
                     if "question" not in q or "choices" not in q:
                         raise ValueError(f"Pregunta {i} incompleta: falta 'question' o 'choices'.")
@@ -109,13 +106,10 @@ class QuizzesMenu(ctk.CTkFrame):
         success = False
         if quiz_type_selection == "Nuevo Quiz":
             if items:
-                # crear New Quiz con preguntas
                 success = self.client.create_new_quiz_and_items(self.course_id, settings, items)
             else:
-                # crear New Quiz vacío
                 success = self.client.create_new_quiz(self.course_id, settings)
         else:
-            # clásico (por ahora sin pegado masivo)
             settings["quiz_type"] = "assignment"
             success = self.client.create_quiz(self.course_id, settings)
 
@@ -152,7 +146,6 @@ class QuizzesMenu(ctk.CTkFrame):
         ctk.CTkButton(win, text="📋 Copiar al portapapeles", command=copy_to_clipboard).pack(pady=6)
 
     def setup_view_quizzes_tab(self):
-        # ... (Copia y pega el código exacto de tu función `setup_view_quizzes_tab` original aquí)
         view_tab = self.tab_view.tab("Ver Quizzes")
         view_tab.grid_columnconfigure(0, weight=1)
         view_tab.grid_rowconfigure(1, weight=1)
@@ -163,31 +156,36 @@ class QuizzesMenu(ctk.CTkFrame):
         self.quiz_list_frame = ctk.CTkScrollableFrame(view_tab, label_text="Quizzes en el Curso")
         self.quiz_list_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
 
+    def _display_quiz_list(self, header_text, quiz_list, first_list=False):
+        """Crea un encabezado y una lista de quizzes en el frame de la lista."""
+        padding_top = (5, 2) if first_list else (15, 2)
+        header = ctk.CTkLabel(self.quiz_list_frame, text=header_text,
+                              font=ctk.CTkFont(weight="bold"))
+        header.pack(anchor="w", padx=10, pady=padding_top)
+        for quiz in quiz_list:
+            label_text = f"• {quiz.get('title', 'Sin título')} (ID: {quiz.get('id', 'N/A')})"
+            label = ctk.CTkLabel(self.quiz_list_frame, text=label_text)
+            label.pack(anchor="w", padx=20, pady=2)
+
     def handle_view_quizzes(self):
-        # ... (Copia y pega el código exacto de tu función `handle_view_quizzes` original aquí)
         logger.info("Botón 'Cargar Todos los Quizzes' pulsado.")
         for widget in self.quiz_list_frame.winfo_children():
             widget.destroy()
+
         classic_quizzes = self.client.get_quizzes(self.course_id)
         new_quizzes = self.client.get_new_quizzes(self.course_id)
+
         if classic_quizzes is None or new_quizzes is None:
             messagebox.showerror("Error", self.client.error_message or "No se pudo cargar la lista de quizzes.")
             return
-        all_quizzes = classic_quizzes + new_quizzes
-        if not all_quizzes:
+
+        if not classic_quizzes and not new_quizzes:
             label = ctk.CTkLabel(self.quiz_list_frame, text="No se encontraron quizzes en este curso.")
             label.pack(pady=10)
-        else:
-            if classic_quizzes:
-                classic_header = ctk.CTkLabel(self.quiz_list_frame, text="Quizzes Clásicos",
-                                              font=ctk.CTkFont(weight="bold"))
-                classic_header.pack(anchor="w", padx=10, pady=(5, 2))
-                for quiz in classic_quizzes:
-                    label = ctk.CTkLabel(self.quiz_list_frame, text=f"• {quiz['title']} (ID: {quiz['id']})")
-                    label.pack(anchor="w", padx=20, pady=2)
-            if new_quizzes:
-                new_header = ctk.CTkLabel(self.quiz_list_frame, text="Nuevos Quizzes", font=ctk.CTkFont(weight="bold"))
-                new_header.pack(anchor="w", padx=10, pady=(15, 2))
-                for quiz in new_quizzes:
-                    label = ctk.CTkLabel(self.quiz_list_frame, text=f"• {quiz['title']} (ID: {quiz['id']})")
-                    label.pack(anchor="w", padx=20, pady=2)
+            return
+
+        if classic_quizzes:
+            self._display_quiz_list("Quizzes Clásicos", classic_quizzes, first_list=True)
+
+        if new_quizzes:
+            self._display_quiz_list("Nuevos Quizzes", new_quizzes)

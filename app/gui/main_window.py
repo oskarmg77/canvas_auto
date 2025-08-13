@@ -1,6 +1,7 @@
 # app/gui/main_window.py
 
 import customtkinter as ctk
+import webbrowser
 from app.api.canvas_client import CanvasClient
 from .quizzes_menu import QuizzesMenu
 from .rubrics_menu import RubricsMenu
@@ -24,7 +25,7 @@ class MainWindow(ctk.CTk):
         course = self.client.get_course(self.course_id)
         self.course_name = course.name if course else f"Curso ID: {self.course_id}"
         self.title(f"Canvas Auto - {self.course_name}")
-        self.geometry("800x600")
+        self.geometry("800x650")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -38,6 +39,9 @@ class MainWindow(ctk.CTk):
 
         # --- INICIAR EL MENÚ PRINCIPAL ---
         self.setup_main_menu()
+
+    def open_main_tutorial(self):
+        webbrowser.open("https://youtu.be/BqtjFDO0Gwc")
 
     def load_icons(self):
         """Carga las imágenes para los botones del menú con un tamaño mayor."""
@@ -138,6 +142,10 @@ class MainWindow(ctk.CTk):
         course_card = self.create_card_button(self.main_menu_frame, self.course_icon, "Cambiar Curso",
                                               self.change_course)
         course_card.grid(row=2, column=1, padx=20, pady=20, sticky="nsew")
+
+        # --- Botón de Tutorial ---
+        tutorial_button = ctk.CTkButton(self.main_menu_frame, text="Ver Video Tutorial", command=self.open_main_tutorial)
+        tutorial_button.grid(row=3, column=0, columnspan=2, pady=(10, 20))
 
     def show_frame(self, frame_to_show):
         self.main_menu_frame.grid_forget()

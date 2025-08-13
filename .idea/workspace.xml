@@ -4,9 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="Compilado .exe v1">
+    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="Traducido al español un comentario en el main.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/gui/activities_menu.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/activities_menu.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/gui/login_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/login_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/gui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/gui/quizzes_menu.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/quizzes_menu.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -107,7 +110,10 @@
       <workItem from="1754811003838" duration="12962000" />
       <workItem from="1754860713591" duration="242000" />
       <workItem from="1754861266609" duration="967000" />
-      <workItem from="1754903443410" duration="404000" />
+      <workItem from="1754903443410" duration="489000" />
+      <workItem from="1754909165903" duration="2679000" />
+      <workItem from="1754979769524" duration="379000" />
+      <workItem from="1755102850708" duration="356000" />
     </task>
     <task id="LOCAL-00001" summary="Implementa flujo de login y selección de curso">
       <option name="closed" value="true" />
@@ -213,7 +219,15 @@
       <option name="project" value="LOCAL" />
       <updated>1754842913754</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="Traducido al español un comentario en el main.">
+      <option name="closed" value="true" />
+      <created>1754903865405</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1754903865405</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -243,11 +257,12 @@
     <MESSAGE value="feat: mejorar gestión de rúbricas y compatibilidad con decimales&#10;- Soporte de puntos decimales en criterios y niveles en CriterionFrame.to_dict()&#10;- Ajuste de handle_create_rubric() para usar siempre el método to_dict()&#10;- Compatibilidad en importación/exportación CSV y JSON con decimales&#10;- Corrección de exportación de rúbricas a CSV desde la lista del curso&#10;- Actualización del README con árbol del proyecto comentado&#10;- Añadido stream.reconfigure(encoding='utf-8') para permitir caracteres Unicode en logs&quot;" />
     <MESSAGE value="feat: Añadir creación y listado completo de quizzes&#10;&#10;Implementa el módulo completo para la gestión de quizzes, tanto Clásicos como Nuevos Quizzes, dentro de un curso de Canvas.&#10;&#10;Esta nueva funcionalidad incluye:&#10;&#10;- Creación de &quot;Nuevos Quizzes&quot; con la capacidad de añadir preguntas de opción múltiple (tipo 'choice') de forma masiva a partir de un payload JSON.&#10;- Implementación de un método en `CanvasClient` (`_build_choice_item`) que transforma una estructura JSON simple en el formato complejo requerido por la API de New Quizzes.&#10;- Creación de Quizzes Clásicos y Nuevos Quizzes vacíos.&#10;- Listado completo de todos los quizzes de un curso, separando visualmente los Clásicos de los Nuevos.&#10;- Corrección en `get_new_quizzes` para manejar correctamente la paginación de la API, asegurando que se obtienen todos los resultados sin importar la cantidad.&#10;&#10;Se ha encapsulado toda la lógica de la interfaz de usuario en una nueva clase `QuizzesMenu` para mejorar la organización del código." />
     <MESSAGE value="Compilado .exe v1" />
-    <option name="LAST_COMMIT_MESSAGE" value="Compilado .exe v1" />
+    <MESSAGE value="Traducido al español un comentario en el main." />
+    <option name="LAST_COMMIT_MESSAGE" value="Traducido al español un comentario en el main." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/canvas_auto$course_window.coverage" NAME="course_window Coverage Results" MODIFIED="1753873132715" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
     <SUITE FILE_PATH="coverage/canvas_auto$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1754314119580" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
-    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1754838969992" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1754910975574" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
