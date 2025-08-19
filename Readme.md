@@ -23,6 +23,14 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
         -   Exportar rúbricas existentes del curso a **CSV compatible** para su reutilización.
     * **Gestión de Actividades**:
         -   Crear tareas definiendo nombre, puntos, descripción y tipos de entrega online.
+        -   **Descarga Inteligente de Entregas**:
+            -   Visualización de actividades **agrupadas por categorías** tal como en la plataforma.
+            -   Al seleccionar una actividad, se muestra un **resumen previo** con el número de entregas, cuántas tienen PDF y si hay una rúbrica asociada.
+            -   **Confirmación del usuario** antes de iniciar la descarga para evitar procesos innecesarios.
+            -   **Información de progreso en tiempo real** durante la descarga.
+            -   **Descarga automática de rúbricas** asociadas en formatos JSON y CSV.
+            -   **Nombres de carpeta abreviados** y saneados para cursos y tareas, evitando errores de rutas largas en Windows.
+            -   Sobrescritura automática de archivos existentes sin preguntar.
 
 ### Formato JSON para Preguntas de Quiz
 
@@ -53,7 +61,7 @@ El siguiente ejemplo muestra todos los campos disponibles:
 }
 
 
-## Estructura del Proyecto 📂
+
 
 ```
 canvas_auto/

@@ -3,7 +3,7 @@
 import customtkinter as ctk
 import webbrowser
 from app.api.canvas_client import CanvasClient
-from .quizzes_menu import QuizzesMenu
+from tkinter import messagebox
 from .rubrics_menu import RubricsMenu
 from .activities_menu import ActivitiesMenu
 from app.utils.logger_config import logger
@@ -11,6 +11,7 @@ from app.utils.logger_config import logger
 # Importaciones necesarias para manejar imágenes
 import os
 from PIL import Image
+from .quizzes_menu import QuizzesMenu
 
 
 class MainWindow(ctk.CTk):
@@ -29,9 +30,11 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
+        # Interceptar el evento de cierre de la ventana
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
         # --- CARGAR ICONOS (con mayor tamaño) ---
         self.load_icons()
-
         # --- SUBMENÚS (INICIALMENTE OCULTOS) ---
         self.quizzes_frame = QuizzesMenu(self, self.client, self.course_id, self.show_main_menu)
         self.rubrics_frame = RubricsMenu(self, self.client, self.course_id, self.show_main_menu)
@@ -39,6 +42,18 @@ class MainWindow(ctk.CTk):
 
         # --- INICIAR EL MENÚ PRINCIPAL ---
         self.setup_main_menu()
+
+    def on_closing(self):
+        """
+        Se ejecuta cuando el usuario intenta cerrar la ventana.
+        Previene el cierre si hay una descarga en curso.
+        """
+        # Comprobamos si el hilo en el menú de actividades está vivo
+        if self.activities_frame.active_thread and self.activities_frame.active_thread.is_alive():
+            messagebox.showwarning("Proceso en Curso", "Hay una descarga en progreso. Por favor, espera a que termine antes de cerrar la aplicación.")
+        else:
+            # Si no hay nada en curso, se cierra normalmente
+            self.destroy()
 
     def open_main_tutorial(self):
         webbrowser.open("https://youtu.be/BqtjFDO0Gwc")

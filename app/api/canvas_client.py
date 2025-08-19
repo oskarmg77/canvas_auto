@@ -1,6 +1,7 @@
 # app/api/canvas_client.py
 import json
 import csv
+import os
 import re
 import uuid
 from pathlib import Path
@@ -62,8 +63,181 @@ class CanvasClient:
             "Content-Type": "application/json",
         }
 
+    def _get_paginated_data(self, url: str, params: dict = None) -> list:
+        """
+        Realiza peticiones GET a un endpoint paginado y devuelve todos los resultados.
+        Maneja la paginación siguiendo los encabezados 'Link' de Canvas.
+        """
+        if params is None:
+            params = {}
+
+        results = []
+        next_url = url
+
+        try:
+            while next_url:
+                # Los parámetros solo se envían en la primera petición
+                current_params = params if next_url == url else None
+                response = requests.get(
+                    next_url, headers=self._auth_headers(), params=current_params, timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+                results.extend(data)
+
+                next_link = response.links.get("next")
+                next_url = next_link["url"] if next_link else None
+
+        except requests.RequestException as e:
+            logger.error(f"Error durante la paginación para {url}: {e}")
+            return []
+        return results
+
     # --------------------------------------------------------------------- #
-    # 2. Rúbricas
+    # 2. Cursos, Actividades y Entregas
+    # --------------------------------------------------------------------- #
+    def get_active_courses(self) -> list[dict] | None:
+        """
+        Devuelve todos los cursos en los que el usuario está activo.
+        Formato: [{'id': 123, 'name': 'Nombre del curso'}, ...]
+        """
+        if not self.canvas:
+            return None
+        try:
+            courses = self.canvas.get_courses(enrollment_state="active")
+            return [{"id": c.id, "name": c.name} for c in courses]
+        except Exception as exc:
+            self.error_message = f"Error al obtener cursos: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def get_course(self, course_id: int):
+        """Wrapper fino para reutilizar en otros métodos."""
+        if not self.canvas:
+            return None
+        try:
+            return self.canvas.get_course(course_id)
+        except Exception as exc:
+            self.error_message = f"No se pudo obtener el curso {course_id}: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def get_assignment(self, course_id: int, assignment_id: int) -> Dict[str, Any] | None:
+        """Obtiene los detalles de una actividad específica."""
+        if not self.canvas:
+            return None
+        try:
+            url = f"{self.canvas_url}/api/v1/courses/{course_id}/assignments/{assignment_id}"
+            response = requests.get(url, headers=self._auth_headers(), timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            self.error_message = f"Error al obtener la actividad {assignment_id}: {e}"
+            logger.error(self.error_message)
+            return None
+
+    def get_assignments(self, course_id: int) -> List[Dict[str, Any]]:
+        """Obtiene una lista de todas las actividades para un curso específico."""
+        if not self.canvas:
+            return []
+        try:
+            url = f"{self.canvas_url}/api/v1/courses/{course_id}/assignments"
+            return self._get_paginated_data(url, params={"per_page": 100})
+        except Exception as e:
+            logger.error(f"Error al obtener las actividades para el curso {course_id}: {e}")
+            return []
+
+    def get_assignment_groups_with_assignments(self, course_id: int) -> List[Dict[str, Any]]:
+        """
+        Obtiene los grupos de actividades de un curso, incluyendo las actividades de cada grupo.
+        """
+        if not self.canvas:
+            return []
+        try:
+            # Usamos el endpoint de grupos de actividades con el parámetro 'include'
+            # para que la API nos devuelva las actividades anidadas en cada grupo.
+            # Esto es más eficiente que hacer una petición por cada grupo.
+            url = f"{self.canvas_url}/api/v1/courses/{course_id}/assignment_groups"
+            params = {"include[]": "assignments", "per_page": 100}
+            return self._get_paginated_data(url, params=params)
+        except Exception as e:
+            logger.error(f"Error al obtener los grupos de actividades para el curso {course_id}: {e}")
+            return []
+
+    def get_assignment_submission_summary(
+        self, course_id: int, assignment_id: int
+    ) -> Dict[str, Any] | None:
+        """
+        Obtiene un resumen de las entregas para una actividad, incluyendo
+        conteo de entregas, si tiene rúbrica y si hay PDFs.
+        """
+        try:
+            assignment = self.get_assignment(course_id, assignment_id)
+            if not assignment:
+                # El mensaje de error ya está establecido por get_assignment
+                return None
+
+            submissions = self.get_all_submissions(course_id, assignment_id)
+
+            # Contamos cuántos alumnos únicos han entregado al menos un PDF
+            students_with_pdf = set()
+            for sub in submissions:
+                user_id = sub.get("user_id")
+                if user_id in students_with_pdf:
+                    continue
+
+                all_attachments = sub.get("attachments", [])
+                for history_item in sub.get("submission_history", []):
+                    all_attachments.extend(history_item.get("attachments", []))
+
+                if any(att.get("filename", "").lower().endswith(".pdf") for att in all_attachments):
+                    students_with_pdf.add(user_id)
+
+            has_rubric = "rubric" in assignment and assignment["rubric"] is not None
+            rubric_id = assignment.get("rubric_settings", {}).get("id") if has_rubric else None
+
+            return {
+                "submission_count": len(submissions),
+                "pdf_submission_count": len(students_with_pdf),
+                "has_rubric": has_rubric,
+                "rubric_id": rubric_id,
+            }
+        except Exception as e:
+            self.error_message = f"Error al obtener el resumen de la actividad {assignment_id}: {e}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def get_all_submissions(self, course_id: int, assignment_id: int) -> List[Dict[str, Any]]:
+        """Obtiene todas las entregas para una actividad específica."""
+        if not self.canvas:
+            return []
+        try:
+            url = f"{self.canvas_url}/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions"
+            params = {"include[]": ["user", "submission_history"], "per_page": 100}
+            return self._get_paginated_data(url, params=params)
+        except Exception as e:
+            logger.error(f"Error al obtener las entregas para la actividad {assignment_id}: {e}")
+            return []
+
+    def download_file(self, url: str, folder_path: str, filename: str) -> bool:
+        """Descarga un único archivo desde una URL y lo guarda en una ruta específica."""
+        try:
+            os.makedirs(folder_path, exist_ok=True)
+            file_path = os.path.join(folder_path, filename)
+            headers = {'Authorization': f'Bearer {self.api_token}'}
+            with requests.get(url, headers=headers, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                with open(file_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            logger.info(f"Archivo descargado: {file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error al descargar el archivo {url}: {e}")
+            return False
+
+    # --------------------------------------------------------------------- #
+    # 3. Rúbricas
     # --------------------------------------------------------------------- #
     def _build_criteria_dict(self, criteria: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -141,6 +315,32 @@ class CanvasClient:
             logger.error(self.error_message)
             return False
 
+    def export_rubric_to_json(self, course_id: int, rubric_id: int, out_path: Path | str) -> bool:
+        """
+        Descarga la rúbrica indicada y la guarda en JSON (datos crudos de la API).
+        """
+        out_path = Path(out_path)
+        try:
+            course = self.get_course(course_id)
+            if course is None:
+                return False
+
+            # get_rubric con include=['assessments'] para datos completos
+            rubric = course.get_rubric(rubric_id, include=["assessments"])
+
+            # El objeto de la rúbrica tiene los datos en el diccionario _attributes
+            rubric_data = rubric._attributes
+
+            with out_path.open("w", encoding="utf-8") as f:
+                json.dump(rubric_data, f, ensure_ascii=False, indent=4)
+
+            logger.info(f"JSON de la rúbrica exportado correctamente → {out_path}")
+            return True
+        except Exception as exc:
+            self.error_message = f"No se pudo exportar la rúbrica a JSON ({exc})"
+            logger.error(self.error_message, exc_info=True)
+            return False
+
     def get_rubrics(self, course_id: int):
         if not self.canvas:
             return None
@@ -156,37 +356,7 @@ class CanvasClient:
             return None
 
     # ------------------------------------------------------------------ #
-    # 2. Cursos (helpers para la GUI principal)
-    # ------------------------------------------------------------------ #
-    def get_active_courses(self) -> list[dict] | None:
-        """
-        Devuelve todos los cursos en los que el usuario está activo.
-        Formato: [{'id': 123, 'name': 'Nombre del curso'}, ...]
-        """
-        if not self.canvas:
-            return None
-        try:
-            courses = self.canvas.get_courses(enrollment_state="active")
-            return [{"id": c.id, "name": c.name} for c in courses]
-        except Exception as exc:
-            self.error_message = f"Error al obtener cursos: {exc}"
-            logger.error(self.error_message, exc_info=True)
-            return None
-
-    def get_course(self, course_id: int):
-        """Wrapper fino para reutilizar en otros métodos."""
-        if not self.canvas:
-            return None
-        try:
-            return self.canvas.get_course(course_id)
-        except Exception as exc:
-            self.error_message = f"No se pudo obtener el curso {course_id}: {exc}"
-            logger.error(self.error_message, exc_info=True)
-            return None
-
-
-    # ------------------------------------------------------------------ #
-    # 3. Exportación CSV
+    # 4. Exportación CSV
     # ------------------------------------------------------------------ #
     def export_rubric_to_csv(
         self, course_id: int, rubric_id: int, out_path: Path | str
@@ -256,274 +426,5 @@ class CanvasClient:
 
         except Exception as exc:
             self.error_message = f"No se pudo exportar rúbrica ({exc})"
-            logger.error(self.error_message, exc_info=True)
-            return False
-
-    # --------------------------------------------------------------------- #
-    # 4. Quizzes (Classic y New Quizzes)
-    # --------------------------------------------------------------------- #
-    def _auth_headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self.api_token}",
-            "Content-Type": "application/json",
-        }
-
-    def _nq_base(self, course_id: int) -> str:
-        return f"{self.canvas_url}/api/quiz/v1/courses/{course_id}"
-
-    # -------- Classic Quizzes (API v1) ----------------------------------- #
-    def get_quizzes(self, course_id: int) -> list[dict] | None:
-        """
-        Lista Quizzes Clásicos del curso (API v1, canvasapi).
-        """
-        if not self.canvas:
-            return None
-        try:
-            course = self.canvas.get_course(course_id)
-            quizzes = course.get_quizzes()
-            out = []
-            for q in quizzes:
-                out.append({"id": q.id, "title": q.title, "type": "classic"})
-            return out
-        except Exception as exc:
-            self.error_message = f"No se pudieron obtener los quizzes clásicos: {exc}"
-            logger.error(self.error_message, exc_info=True)
-            return None
-
-    def create_quiz(self, course_id: int, settings: dict) -> bool:
-        """
-        Crea un Quiz Clásico (API v1).
-        settings típicos: { 'title', 'description', 'quiz_type'='assignment', ... }
-        """
-        if not self.canvas:
-            return False
-        try:
-            course = self.canvas.get_course(course_id)
-            # canvasapi usa 'description' para el enunciado del quiz clásico
-            course.create_quiz(quiz={
-                "title": settings.get("title", ""),
-                "description": settings.get("description", ""),
-                "quiz_type": settings.get("quiz_type", "assignment"),
-                "published": settings.get("published", False),
-            })
-            return True
-        except Exception as exc:
-            self.error_message = f"No se pudo crear el quiz clásico: {exc}"
-            logger.error(self.error_message, exc_info=True)
-            return False
-
-    # -------- New Quizzes (quiz/v1) -------------------------------------- #
-    def get_new_quizzes(self, course_id: int) -> list[dict] | None:
-        """
-        Lista New Quizzes del curso (quiz/v1), manejando la paginación.
-        OJO: en New Quizzes el 'id' devuelto es el assignment_id usable en /items.
-        """
-        try:
-            all_new_quizzes = []  # 1. Lista para acumular los resultados
-            url = f"{self._nq_base(course_id)}/quizzes"
-
-            # 2. Bucle para seguir las páginas 'next' hasta que no haya más
-            while url:
-                r = requests.get(url, headers=self._auth_headers(), timeout=30)
-                r.raise_for_status()
-                data = r.json() or []
-
-                # 3. Acumular los quizzes de la página actual
-                all_new_quizzes.extend(
-                    [{"id": q.get("id"), "title": q.get("title"), "type": "new"} for q in data]
-                )
-
-                # 4. Buscar el enlace a la siguiente página en las cabeceras
-                # La librería 'requests' convenientemente parsea el header 'Link'
-                next_link = r.links.get('next')
-                if next_link:
-                    url = next_link.get('url')
-                else:
-                    url = None # 5. Si no hay más páginas, terminamos el bucle
-
-            return all_new_quizzes
-
-        except Exception as exc:
-            self.error_message = f"No se pudieron obtener los New Quizzes: {exc}"
-            logger.error(self.error_message, exc_info=True)
-            return None
-
-    def create_new_quiz(self, course_id: int, settings: dict) -> bool:
-        """
-        Crea un New Quiz vacío (quiz/v1). Devuelve True/False.
-        """
-        try:
-            url = f"{self._nq_base(course_id)}/quizzes"
-            payload = {
-                "quiz": {
-                    "title": settings.get("title", ""),
-                    "instructions": settings.get("description", ""),
-                    "published": settings.get("published", False),
-                    # puedes pasar 'points_possible', 'grading_type', 'quiz_settings', etc.
-                }
-            }
-            r = requests.post(url, headers=self._auth_headers(), json=payload, timeout=30)
-            r.raise_for_status()
-            return True
-        except Exception as exc:
-            self.error_message = f"No se pudo crear el New Quiz: {exc}"
-            logger.error(self.error_message, exc_info=True)
-            return False
-
-    # ------------------- New Quizzes: crear ítems tipo test -------------- #
-    def _as_html_p(self, text: str) -> str:
-        text = (text or "").strip()
-        return f"<p>{text}</p>"
-
-    def _uuid(self) -> str:
-        return str(uuid.uuid4())
-
-    def _build_choice_item(self, q: dict, position: int, default_points: float = 1.0) -> dict:
-        """
-        Transforma una pregunta de entrada sencilla a la forma requerida por New Quizzes (choice).
-        Entrada esperada (flexible):
-          {
-            "question": "Texto de la pregunta",
-            "choices": ["A", "B", "C", "D"],
-            "correct": 1,                 # índice (0-based) o letra 'A'..'D' o el propio texto
-            "points": 1.0,                # opcional
-            "feedback_correct": "...",    # opcional (rich content admitido)
-            "feedback_incorrect": "...",  # opcional
-            "answer_feedback": {"B": "..."}  # opcional, por opción
-          }
-        """
-        title = q.get("title") or f"Pregunta {position}"
-        body = self._as_html_p(q.get("question", ""))
-
-        # Crear choices con UUID
-        raw_choices = q.get("choices", [])
-        choices = []
-        letter_map = {}  # 'A' -> uuid, 'B' -> uuid...
-        for i, txt in enumerate(raw_choices, start=1):
-            cid = self._uuid()
-            choices.append({
-                "id": cid,
-                "position": i,
-                "itemBody": self._as_html_p(str(txt)),
-            })
-            letter_map[chr(64 + i)] = cid  # A,B,C,...
-
-        # Resolver la correcta -> UUID
-        correct = q.get("correct")
-        correct_uuid = None
-        if isinstance(correct, int):
-            # índice 0-based
-            idx = max(0, min(len(choices) - 1, correct))
-            correct_uuid = choices[idx]["id"] if choices else None
-        elif isinstance(correct, str):
-            # letra ('A', 'b', ...) o texto exacto de la opción
-            c = correct.strip()
-            if c.upper() in letter_map:
-                correct_uuid = letter_map[c.upper()]
-            else:
-                # buscar por texto
-                for ch in choices:
-                    # quitar <p>...</p> para comparar
-                    plain = re.sub(r"<\/?p>", "", ch["itemBody"], flags=re.I).strip()
-                    if plain == c:
-                        correct_uuid = ch["id"]
-                        break
-
-        points = float(q.get("points", default_points) or default_points)
-
-        # Feedback por pregunta (correcto/incorrecto)
-        feedback = {}
-        if q.get("feedback_correct"):
-            feedback["correct"] = self._as_html_p(q["feedback_correct"])
-        if q.get("feedback_incorrect"):
-            feedback["incorrect"] = self._as_html_p(q["feedback_incorrect"])
-
-        # Feedback por respuesta (mapear a UUID -> html)
-        answer_feedback_in = q.get("answer_feedback", {}) or {}
-        answer_feedback = {}
-        for key, fb in answer_feedback_in.items():
-            # key puede ser letra, índice o texto
-            target_uuid = None
-            if isinstance(key, int):
-                if 0 <= key < len(choices):
-                    target_uuid = choices[key]["id"]
-            elif isinstance(key, str):
-                if key.upper() in letter_map:
-                    target_uuid = letter_map[key.upper()]
-                else:
-                    # por texto
-                    for ch in choices:
-                        plain = re.sub(r"<\/?p>", "", ch["itemBody"], flags=re.I).strip()
-                        if plain == key.strip():
-                            target_uuid = ch["id"]
-                            break
-            if target_uuid:
-                answer_feedback[target_uuid] = self._as_html_p(str(fb))
-
-        # Construir payload conforme a la doc oficial (choice)
-        return {
-            "item": {
-                "entry_type": "Item",
-                "points_possible": points,
-                "position": position,
-                "entry": {
-                    "interaction_type_slug": "choice",
-                    "title": title,
-                    "item_body": body,
-                    "calculator_type": "none",
-                    "interaction_data": {
-                        "choices": choices
-                    },
-                    "properties": {
-                        "shuffleRules": {
-                            "choices": {"toLock": [], "shuffled": True}
-                        },
-                        "varyPointsByAnswer": False
-                    },
-                    "scoring_data": {
-                        "value": correct_uuid
-                    },
-                    "scoring_algorithm": "Equivalence",
-                    # 'feedback' y 'answer_feedback' son opcionales
-                    **({"feedback": feedback} if feedback else {}),
-                    **({"answer_feedback": answer_feedback} if answer_feedback else {}),
-                }
-            }
-        }
-
-    def create_new_quiz_and_items(self, course_id: int, settings: dict, items: list[dict]) -> bool:
-        """
-        Crea un New Quiz y a continuación añade ítems tipo 'choice' (uno por POST).
-        'items' es una lista de dicts como los que espera _build_choice_item.
-        """
-        try:
-            # 1) Crear el New Quiz
-            url_quiz = f"{self._nq_base(course_id)}/quizzes"
-            payload_quiz = {"quiz": {
-                "title": settings.get("title", ""),
-                "instructions": settings.get("description", ""),
-                "published": settings.get("published", False),
-            }}
-            r = requests.post(url_quiz, headers=self._auth_headers(), json=payload_quiz, timeout=30)
-            r.raise_for_status()
-            quiz_obj = r.json() or {}
-            # En New Quizzes, el 'id' que devuelve es el assignment_id usable en /items
-            assignment_id = quiz_obj.get("id")
-            if not assignment_id:
-                self.error_message = "La API no devolvió un id para el New Quiz."
-                return False
-
-            # 2) Añadir cada ítem
-            url_items = f"{self._nq_base(course_id)}/quizzes/{assignment_id}/items"
-            for pos, q in enumerate(items, start=1):
-                item_payload = self._build_choice_item(q, position=pos)
-                r_item = requests.post(url_items, headers=self._auth_headers(),
-                                       json=item_payload, timeout=30)
-                r_item.raise_for_status()
-
-            return True
-
-        except Exception as exc:
-            self.error_message = f"No se pudieron crear los ítems del New Quiz: {exc}"
             logger.error(self.error_message, exc_info=True)
             return False
