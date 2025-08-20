@@ -28,7 +28,8 @@ class MainWindow(ctk.CTk):
         self.title(f"Canvas Auto - {self.course_name}")
         self.geometry("800x650")
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)  # Fila para el contenido principal
+        self.grid_rowconfigure(1, weight=0)  # Fila para la barra de estado
 
         # Interceptar el evento de cierre de la ventana
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -38,10 +39,23 @@ class MainWindow(ctk.CTk):
         # --- SUBMENÚS (INICIALMENTE OCULTOS) ---
         self.quizzes_frame = QuizzesMenu(self, self.client, self.course_id, self.show_main_menu)
         self.rubrics_frame = RubricsMenu(self, self.client, self.course_id, self.show_main_menu)
-        self.activities_frame = ActivitiesMenu(self, self.client, self.course_id, self.show_main_menu)
+        self.activities_frame = ActivitiesMenu(self, self.client, self.course_id, self)
 
         # --- INICIAR EL MENÚ PRINCIPAL ---
         self.setup_main_menu()
+
+        # --- BARRA DE ESTADO ---
+        self.status_frame = ctk.CTkFrame(self, height=25)
+        self.status_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(5, 10))
+        self.status_frame.grid_columnconfigure(0, weight=1)
+
+        self.status_label = ctk.CTkLabel(self.status_frame, text="Listo", anchor="w")
+        self.status_label.grid(row=0, column=0, padx=10, sticky="ew")
+
+        self.progress_bar = ctk.CTkProgressBar(self.status_frame)
+        # La barra de progreso se oculta/muestra usando grid_forget/grid
+
+        self.status_timer = None  # Para manejar el borrado automático del estado
 
     def on_closing(self):
         """
@@ -188,3 +202,35 @@ class MainWindow(ctk.CTk):
         logger.info("Botón 'Seleccionar otro Curso' pulsado. Reiniciando flujo.")
         self.restart = True
         self.destroy()
+
+    # --- Métodos de la Barra de Estado ---
+
+    def update_status(self, message: str, clear_after_ms: int = 0):
+        """Actualiza el texto de la barra de estado."""
+        self.status_label.configure(text=message)
+
+        if self.status_timer:
+            self.after_cancel(self.status_timer)
+
+        if clear_after_ms > 0:
+            self.status_timer = self.after(clear_after_ms, lambda: self.status_label.configure(text="Listo"))
+
+    def show_progress_bar(self, indeterminate=False):
+        """Muestra la barra de progreso."""
+        if indeterminate:
+            self.progress_bar.configure(mode='indeterminate')
+            self.progress_bar.start()
+        else:
+            self.progress_bar.configure(mode='determinate')
+            self.progress_bar.set(0)
+
+        self.progress_bar.grid(row=0, column=1, padx=10, pady=5, sticky="e")
+
+    def hide_progress_bar(self):
+        """Oculta la barra de progreso."""
+        self.progress_bar.stop()
+        self.progress_bar.grid_forget()
+
+    def update_progress(self, value: float):
+        """Actualiza el valor de la barra de progreso (de 0.0 a 1.0)."""
+        self.progress_bar.set(value)

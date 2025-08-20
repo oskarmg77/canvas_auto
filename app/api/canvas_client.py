@@ -219,6 +219,155 @@ class CanvasClient:
             logger.error(f"Error al obtener las entregas para la actividad {assignment_id}: {e}")
             return []
 
+    def get_quizzes(self, course_id: int) -> list[dict] | None:
+        """
+        Devuelve todos los quizzes clásicos de un curso.
+        """
+        if not self.canvas:
+            return None
+        try:
+            course = self.get_course(course_id)
+            if not course:
+                return None
+            quizzes = course.get_quizzes()
+            return [{"id": q.id, "title": q.title} for q in quizzes]
+        except Exception as exc:
+            self.error_message = f"Error al obtener quizzes clásicos: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def get_new_quizzes(self, course_id: int) -> list[dict] | None:
+        """
+        Devuelve todos los "Nuevos Quizzes" (Quizzes.Next) de un curso.
+        Usa un endpoint de API diferente y no oficial.
+        """
+        if not self.canvas:
+            return None
+        try:
+            url = f"{self.canvas_url}/api/quiz/v1/courses/{course_id}/quizzes"
+            response = requests.get(url, headers=self._auth_headers(), timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            # El endpoint de "Nuevos Quizzes" puede devolver una lista [...] directamente
+            # o un objeto {"quizzes": [...]}. Este código maneja ambos casos.
+            quiz_list = data if isinstance(data, list) else data.get("quizzes", [])
+            return [{"id": q.get("id"), "title": q.get("title")} for q in quiz_list]
+        except requests.RequestException as e:
+            if e.response is not None and e.response.status_code == 404:
+                logger.warning(f"Endpoint de Nuevos Quizzes no encontrado para curso {course_id} (404).")
+                return []  # Devolver lista vacía si la API no existe.
+            self.error_message = f"Error de red al obtener Nuevos Quizzes: {e}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+        except Exception as exc:
+            self.error_message = f"Error inesperado al procesar Nuevos Quizzes: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    # --------------------------------------------------------------------- #
+    # 3. Quizzes (Creación y Gestión)
+    # --------------------------------------------------------------------- #
+    def create_quiz(self, course_id: int, quiz_settings: dict) -> bool:
+        """Crea un quiz clásico en un curso."""
+        if not self.canvas:
+            return False
+        try:
+            course = self.get_course(course_id)
+            if not course:
+                return False
+
+            # La GUI ya prepara el diccionario de configuración del quiz.
+            quiz = course.create_quiz(quiz=quiz_settings)
+            logger.info(f"Quiz clásico '{quiz.title}' creado con ID {quiz.id}.")
+            return True
+        except Exception as exc:
+            self.error_message = f"Error al crear el quiz clásico: {exc}"
+            logger.error(self.error_message, exc_info=True)
+            return False
+
+    def _create_new_quiz_base(self, course_id: int, quiz_settings: dict) -> dict | None:
+        """
+        [PRIVADO] Crea un "Nuevo Quiz" (Quizzes.Next) y devuelve el objeto del quiz.
+        """
+        if not self.canvas:
+            return None
+
+        url = f"{self.canvas_url}/api/quiz/v1/courses/{course_id}/quizzes"
+        # La API de "Nuevos Quizzes" espera que el payload esté anidado dentro de una clave "quiz".
+        payload = {
+            "quiz": {
+                "title": quiz_settings.get("title"),
+                "description": quiz_settings.get("description"),
+                "published": quiz_settings.get("published", False)
+            }
+        }
+
+        try:
+            response = requests.post(url, headers=self._auth_headers(), json=payload, timeout=30)
+            response.raise_for_status()
+            # La respuesta para un solo quiz está anidada en la clave "quizzes" como una lista de un elemento
+            quiz_data = response.json().get("quizzes", [{}])[0]
+            logger.info(f"Nuevo Quiz '{quiz_data.get('title')}' creado con ID {quiz_data.get('id')}.")
+            return quiz_data
+        except requests.RequestException as e:
+            self.error_message = f"Error de red al crear el Nuevo Quiz: {e}"
+            logger.error(self.error_message, exc_info=True)
+            return None
+
+    def create_new_quiz(self, course_id: int, quiz_settings: dict) -> bool:
+        """Crea un "Nuevo Quiz" (Quizzes.Next) sin preguntas."""
+        return self._create_new_quiz_base(course_id, quiz_settings) is not None
+
+    def create_new_quiz_and_items(self, course_id: int, quiz_settings: dict, items: list) -> bool:
+        """
+        Crea un "Nuevo Quiz" y le añade las preguntas (items) proporcionadas.
+        """
+        quiz_data = self._create_new_quiz_base(course_id, quiz_settings)
+        if not quiz_data:
+            return False  # El mensaje de error ya está establecido
+
+        quiz_id = quiz_data.get("id")
+        if not quiz_id:
+            self.error_message = "El quiz se creó pero no se pudo obtener su ID."
+            logger.error(self.error_message)
+            return False
+
+        group_url = f"{self.canvas_url}/api/quiz/v1/courses/{course_id}/quizzes/{quiz_id}/groups"
+        group_payload = {"quiz_groups": [{"name": "Preguntas", "pick_count": len(items), "question_points": 1}]}
+        try:
+            group_response = requests.post(group_url, headers=self._auth_headers(), json=group_payload, timeout=30)
+            group_response.raise_for_status()
+            group_id = group_response.json()["quiz_groups"][0]["id"]
+        except requests.RequestException as e:
+            self.error_message = f"Quiz creado, pero falló al crear grupo de preguntas: {e}"
+            logger.error(self.error_message, exc_info=True)
+            return False
+
+        item_url = f"{self.canvas_url}/api/quiz/v1/courses/{course_id}/quizzes/{quiz_id}/groups/{group_id}/items"
+        errors = []
+        for i, item_data in enumerate(items, 1):
+            answers = [{"text": c.get("text", ""), "weight": 100 if c.get("correct") else 0} for c in item_data.get("choices", [])]
+            item_payload = { # This line was incomplete. Adding the rest of the payload.
+                "quiz_item": {
+                    "item_type": item_data.get("item_type", "question"),
+                    "question_type": item_data.get("question_type"),
+                    "question_text": item_data.get("question_text"),
+                    "points_possible": item_data.get("points_possible", 1),
+                    "answers": answers,
+                }
+            }
+            try:
+                item_response = requests.post(item_url, headers=self._auth_headers(), json=item_payload, timeout=30)
+                item_response.raise_for_status()
+            except requests.RequestException as e:
+                errors.append(f"Error al añadir pregunta {i}: {e}")
+                logger.error(f"Error al añadir pregunta {i}: {e}", exc_info=True)
+
+        if errors:
+            self.error_message = f"Se crearon algunas preguntas, pero hubo errores: {'; '.join(errors)}"
+            return False
+        return True
+
     def download_file(self, url: str, folder_path: str, filename: str) -> bool:
         """Descarga un único archivo desde una URL y lo guarda en una ruta específica."""
         try:
@@ -321,15 +470,13 @@ class CanvasClient:
         """
         out_path = Path(out_path)
         try:
-            course = self.get_course(course_id)
-            if course is None:
-                return False
-
-            # get_rubric con include=['assessments'] para datos completos
-            rubric = course.get_rubric(rubric_id, include=["assessments"])
-
-            # El objeto de la rúbrica tiene los datos en el diccionario _attributes
-            rubric_data = rubric._attributes
+            # Se usa una petición directa para obtener el JSON crudo, evitando problemas
+            # de serialización con el objeto de la librería `canvasapi`.
+            url = f"{self.canvas_url}/api/v1/courses/{course_id}/rubrics/{rubric_id}"
+            params = {"include[]": "assessments"}
+            response = requests.get(url, headers=self._auth_headers(), params=params, timeout=30)
+            response.raise_for_status()
+            rubric_data = response.json()
 
             with out_path.open("w", encoding="utf-8") as f:
                 json.dump(rubric_data, f, ensure_ascii=False, indent=4)

@@ -17,18 +17,18 @@ SUBMISSION_TYPES = {
 }
 
 class ActivitiesMenu(ctk.CTkFrame):
-    def __init__(self, parent, client, course_id, back_callback):
+    def __init__(self, parent, client, course_id, main_window):
         super().__init__(parent)
         self.client = client
         self.course_id = course_id
-        self.back_callback = back_callback
+        self.main_window = main_window # Referencia a la ventana principal para usar la barra de estado
         self.submission_checkboxes = {}  # Para almacenar las variables de los checkboxes
         self.assignments = {}
         self.assignment_buttons = {}
         self.selected_assignment_id = None
         self.active_thread = None  # Para controlar el hilo de descarga
 
-        back_button = ctk.CTkButton(self, text="< Volver al Menú Principal", command=self.back_callback)
+        back_button = ctk.CTkButton(self, text="< Volver al Menú Principal", command=self.main_window.show_main_menu)
         back_button.pack(anchor="nw", padx=10, pady=10)
 
         container = ctk.CTkFrame(self)
@@ -41,7 +41,6 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.tab_view.add("Descargar Entregas")
         self.setup_activity_tab()
         self.setup_download_tab()
-
 
     def setup_activity_tab(self):
         activity_tab = self.tab_view.tab("Crear Actividad")
@@ -98,73 +97,72 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.assignments_frame = ctk.CTkScrollableFrame(download_tab, label_text="Actividades del Curso")
         self.assignments_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
         self.assignments_frame.grid_columnconfigure(0, weight=1)
+        
+        # Mensaje de carga inicial en el frame
+        self.loading_label = ctk.CTkLabel(self.assignments_frame, text="Cargando, por favor espera...")
+        self.loading_label.pack(pady=20)
 
-        # Etiqueta para mostrar el progreso de la descarga
-        self.progress_label = ctk.CTkLabel(download_tab, text="", anchor="w")
-        self.progress_label.grid(row=2, column=0, sticky="ew", padx=10, pady=(5, 10))
-
-        self._load_assignments()
+        # Iniciar la carga en un hilo para no bloquear la GUI
+        threading.Thread(target=self._load_assignments, daemon=True).start()
 
     def _load_assignments(self):
-        for widget in self.assignments_frame.winfo_children():
-            widget.destroy()
-        self.assignments.clear()
-        self.assignment_buttons.clear()
-        self.selected_assignment_id = None
-        self.selected_assignment_label.configure(text="Selecciona una actividad de la lista para ver detalles y descargar.")
-
+        """Carga las actividades en un hilo secundario y actualiza la GUI."""
+        self.after(0, self.main_window.update_status, "Cargando lista de actividades...")
         try:
-            # Cambiamos a la nueva función que obtiene los grupos con sus actividades
             assignment_groups = self.client.get_assignment_groups_with_assignments(self.course_id)
-            if not assignment_groups:
-                messagebox.showinfo("Información", "No se encontraron grupos de actividades para este curso.")
-                return
+            self.after(0, self._populate_assignments_list, assignment_groups)
+            self.after(0, self.main_window.update_status, "Listo", 3000)
+        except Exception as e:
+            error_msg = f"No se pudieron cargar las actividades: {e}"
+            logger.error(error_msg, exc_info=True)
+            self.after(0, self.main_window.update_status, "Error al cargar actividades.", 5000)
+            self.after(0, messagebox.showerror, "Error", error_msg)
+            self.after(0, self.loading_label.configure, {"text": "Error al cargar."})
 
-            # Iteramos sobre cada grupo de actividades
-            for group in assignment_groups:
-                # Creamos una etiqueta para el nombre del grupo
-                group_label = ctk.CTkLabel(
+    def _populate_assignments_list(self, assignment_groups):
+        """Puebla la lista de actividades en el hilo principal."""
+        self.loading_label.pack_forget() # Ocultar el mensaje de "cargando"
+
+        if not assignment_groups:
+            no_groups_label = ctk.CTkLabel(self.assignments_frame, text="No se encontraron grupos de actividades.")
+            no_groups_label.pack(pady=10)
+            return
+
+        for group in assignment_groups:
+            group_label = ctk.CTkLabel(
+                self.assignments_frame,
+                text=group['name'],
+                font=ctk.CTkFont(size=14, weight="bold"),
+                anchor="w"
+            )
+            group_label.pack(fill="x", padx=5, pady=(10, 5))
+
+            assignments_in_group = group.get('assignments', [])
+            if not assignments_in_group:
+                no_assign_label = ctk.CTkLabel(
                     self.assignments_frame,
-                    text=group['name'],
-                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text=" (Sin actividades en este grupo)",
+                    font=ctk.CTkFont(size=11, slant="italic"),
                     anchor="w"
                 )
-                group_label.pack(fill="x", padx=5, pady=(10, 5))
+                no_assign_label.pack(fill="x", padx=20, pady=(0, 5))
 
-                # Obtenemos las actividades de este grupo
-                assignments_in_group = group.get('assignments', [])
-                if not assignments_in_group:
-                    no_assign_label = ctk.CTkLabel(
-                        self.assignments_frame,
-                        text=" (Sin actividades en este grupo)",
-                        font=ctk.CTkFont(size=11, slant="italic"),
-                        anchor="w"
-                    )
-                    no_assign_label.pack(fill="x", padx=20, pady=(0, 5))
+            for assignment in assignments_in_group:
+                assignment_id = assignment['id']
+                self.assignments[assignment_id] = assignment
+                btn = ctk.CTkButton(
+                    self.assignments_frame,
+                    text=assignment['name'],
+                    command=lambda a_id=assignment_id: self._select_assignment(a_id)
+                )
+                btn.pack(fill="x", padx=(20, 5), pady=2)
+                self.assignment_buttons[assignment_id] = btn
 
-                for assignment in assignments_in_group:
-                    assignment_id = assignment['id']
-                    # Guardamos la actividad en el diccionario plano para fácil acceso
-                    self.assignments[assignment_id] = assignment
-                    
-                    # Creamos el botón para la actividad, con una sangría
-                    btn = ctk.CTkButton(
-                        self.assignments_frame,
-                        text=assignment['name'],
-                        command=lambda a_id=assignment_id: self._select_assignment(a_id)
-                    )
-                    # Usamos padx para crear la sangría visual
-                    btn.pack(fill="x", padx=(20, 5), pady=2)
-                    self.assignment_buttons[assignment_id] = btn
-
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudieron cargar las actividades: {e}")
-            logger.error(f"Error al cargar actividades: {e}", exc_info=True)
-
-    def _enable_assignment_buttons(self):
-        """Helper para reactivar los botones de actividad en el hilo principal."""
+    def _enable_assignment_buttons(self, enable=True):
+        """Helper para (des)activar los botones de actividad en el hilo principal."""
+        state = "normal" if enable else "disabled"
         for btn in self.assignment_buttons.values():
-            btn.configure(state="normal")
+            btn.configure(state=state)
 
     def _select_assignment(self, assignment_id):
         """Se llama al pulsar un botón de actividad. Inicia la obtención de detalles."""
@@ -175,56 +173,60 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.selected_assignment_id = assignment_id
         assignment_name = self.assignments[assignment_id]["name"]
         self.selected_assignment_label.configure(text=f"Actividad seleccionada: {assignment_name}")
-        self.progress_label.configure(text="Obteniendo resumen de entregas...")
+        
+        self.main_window.update_status("Obteniendo resumen de entregas...")
+        self.main_window.show_progress_bar(indeterminate=True)
         logger.info(f"Actividad seleccionada: {assignment_name} (ID: {assignment_id}). Obteniendo resumen...")
 
-        # Desactivar botones mientras se obtiene la información
-        for btn in self.assignment_buttons.values():
-            btn.configure(state="disabled")
+        self._enable_assignment_buttons(False)
 
         self.active_thread = threading.Thread(target=self._fetch_and_prompt_download, args=(assignment_id,))
         self.active_thread.start()
 
     def _fetch_and_prompt_download(self, assignment_id):
         """Obtiene el resumen y luego pregunta al usuario si desea descargar."""
-        summary = self.client.get_assignment_submission_summary(self.course_id, assignment_id)
+        try:
+            summary = self.client.get_assignment_submission_summary(self.course_id, assignment_id)
+            if not summary:
+                raise Exception(self.client.error_message or "La API no devolvió un resumen.")
 
-        # Reactivar botones en el hilo principal
-        self.after(0, self._enable_assignment_buttons)
+            def prompt_on_main_thread():
+                self.main_window.hide_progress_bar()
+                self._enable_assignment_buttons(True)
+                assignment_name = self.assignments[assignment_id]["name"]
+                info_message = (
+                    f"Actividad: {assignment_name}\n\n"
+                    f"• Total de entregas: {summary['submission_count']}\n"
+                    f"• Entregas con PDF: {summary['pdf_submission_count']}\n"
+                    f"• Tiene rúbrica asociada: {'Sí' if summary['has_rubric'] else 'No'}\n\n"
+                    "¿Deseas iniciar la descarga?"
+                )
+                self.main_window.update_status("Esperando confirmación del usuario...")
 
-        if not summary:
-            self.after(0, self.progress_label.configure, {"text": "Error al obtener resumen."})
-            self.after(0, messagebox.showerror, "Error", self.client.error_message or "No se pudo obtener el resumen.")
-            return
+                if messagebox.askyesno("Confirmar Descarga", info_message):
+                    self._start_download_thread(assignment_id, summary)
+                else:
+                    self.main_window.update_status("Descarga cancelada.", clear_after_ms=4000)
+                    self.selected_assignment_label.configure(text="Selecciona una actividad de la lista...")
+                    self.selected_assignment_id = None
 
-        def prompt_on_main_thread():
-            assignment_name = self.assignments[assignment_id]["name"]
-            info_message = (
-                f"Actividad: {assignment_name}\n\n"
-                f"• Total de entregas: {summary['submission_count']}\n"
-                f"• Entregas con PDF: {summary['pdf_submission_count']}\n"
-                f"• Tiene rúbrica asociada: {'Sí' if summary['has_rubric'] else 'No'}\n\n"
-                "¿Deseas iniciar la descarga?"
-            )
-            self.progress_label.configure(text="Esperando confirmación del usuario...")
+            self.after(0, prompt_on_main_thread)
 
-            if messagebox.askyesno("Confirmar Descarga", info_message):
-                self._start_download_thread(assignment_id, summary)
-            else:
-                self.progress_label.configure(text="Descarga cancelada por el usuario.")
-                self.selected_assignment_label.configure(text="Selecciona una actividad de la lista...")
-                self.selected_assignment_id = None
-
-        self.after(0, prompt_on_main_thread)
+        except Exception as e:
+            logger.error(f"Error al obtener resumen de la actividad {assignment_id}: {e}")
+            self.after(0, self._on_download_error, "Error al obtener el resumen de la actividad.")
 
     def _start_download_thread(self, assignment_id, summary):
         """Inicia el proceso de descarga de archivos en un nuevo hilo."""
         base_dir = filedialog.askdirectory(title="Selecciona la carpeta base para las descargas")
         if not base_dir:
-            self.progress_label.configure(text="Descarga cancelada.")
+            self.main_window.update_status("Descarga cancelada.", clear_after_ms=4000)
             return
 
-        self.progress_label.configure(text="Iniciando descarga...")
+        self.main_window.update_status("Iniciando descarga...")
+        self.main_window.show_progress_bar() # Barra de progreso determinada
+        self._enable_assignment_buttons(False)
+
         self.active_thread = threading.Thread(
             target=self._handle_download_submissions, args=(assignment_id, summary, base_dir)
         )
@@ -261,9 +263,12 @@ class ActivitiesMenu(ctk.CTkFrame):
         # Elimina espacios o puntos al principio o al final, que son problemáticos en Windows
         return sanitized_name.strip(" .")
 
-    def _update_progress_label(self, text):
-        """Planifica una actualización de la etiqueta de progreso en el hilo principal."""
-        self.after(0, self.progress_label.configure, {"text": text})
+    def _on_download_error(self, error_msg: str):
+        """Función centralizada para manejar errores de descarga en la GUI."""
+        self.main_window.hide_progress_bar()
+        self.main_window.update_status("Error en la descarga.", clear_after_ms=8000)
+        self._enable_assignment_buttons(True)
+        messagebox.showerror("Error de Descarga", error_msg)
 
     def _handle_download_submissions(self, assignment_id, summary, base_dir):
         """Maneja la lógica de descarga en un hilo separado para no bloquear la UI."""
@@ -281,11 +286,13 @@ class ActivitiesMenu(ctk.CTkFrame):
             base_path = Path(base_dir)
             activity_path = base_path / course_folder_name / assignment_folder_name
             
-            self._update_progress_label("Obteniendo lista completa de entregas...")
+            self.after(0, self.main_window.update_status, "Obteniendo lista completa de entregas...")
             submissions = self.client.get_all_submissions(self.course_id, assignment_id)
             if not submissions:
-                self._update_progress_label("No se encontraron entregas para esta actividad.")
+                self.after(0, self.main_window.update_status, "No se encontraron entregas para esta actividad.", 5000)
                 self.after(0, messagebox.showinfo, "Sin entregas", "No se encontraron entregas para esta actividad.")
+                self.after(0, self.main_window.hide_progress_bar)
+                self.after(0, self._enable_assignment_buttons, True)
                 return
 
             downloaded_files = 0
@@ -293,8 +300,10 @@ class ActivitiesMenu(ctk.CTkFrame):
             total_submissions = len(submissions)
 
             for i, sub in enumerate(submissions):
+                progress = (i + 1) / total_submissions
                 student_name = self._sanitize_filename(sub.get("user", {}).get("name", "sin_nombre"))
-                self._update_progress_label(f"Procesando {i+1}/{total_submissions}: {student_name}")
+                self.after(0, self.main_window.update_status, f"Procesando {i+1}/{total_submissions}: {student_name}")
+                self.after(0, self.main_window.update_progress, progress)
 
                 attachments = []
                 if "attachments" in sub:
@@ -314,7 +323,8 @@ class ActivitiesMenu(ctk.CTkFrame):
                     student_folder = activity_path / student_name
                     # --- MEJORA: Decodificar y sanear el nombre del archivo adjunto ---
                     filename = self._sanitize_filename(att["filename"], decode_url=True)
-                    self._update_progress_label(f"Descargando '{filename}' de {student_name}...")
+                    # Actualizamos el estado para mostrar el archivo actual, pero mantenemos la barra de progreso general
+                    self.after(0, self.main_window.update_status, f"Descargando '{filename}' ({i+1}/{total_submissions})")
                     success = self.client.download_file(att["url"], student_folder, filename)
                     if success:
                         downloaded_files += 1
@@ -322,23 +332,28 @@ class ActivitiesMenu(ctk.CTkFrame):
                         error_count += 1
 
             if summary.get("has_rubric") and summary.get("rubric_id"):
-                self._update_progress_label("Descargando rúbrica asociada...")
+                self.after(0, self.main_window.update_status, "Descargando rúbrica asociada...")
                 # La rúbrica se guarda en la carpeta de la actividad
                 rubric_base_name = f"rubrica_{assignment_folder_name}"
                 self.client.export_rubric_to_json(self.course_id, summary["rubric_id"], activity_path / f"{rubric_base_name}.json")
                 self.client.export_rubric_to_csv(self.course_id, summary["rubric_id"], activity_path / f"{rubric_base_name}.csv")
 
-            final_message = f"Descarga completada.\n\nArchivos descargados: {downloaded_files}\nErrores: {error_count}"
-            if summary.get("has_rubric"):
-                final_message += "\nLa rúbrica asociada ha sido guardada en formato JSON y CSV."
-            self._update_progress_label("¡Descarga completada!")
-            self.after(0, messagebox.showinfo, "Descarga Completada", final_message)
+            # --- Finalización Exitosa ---
+            def on_success():
+                self.main_window.hide_progress_bar()
+                self._enable_assignment_buttons(True)
+                self.main_window.update_status("¡Descarga completada!", clear_after_ms=5000)
+                final_message = f"Descarga completada.\n\nArchivos descargados: {downloaded_files}\nErrores: {error_count}"
+                if summary.get("has_rubric"):
+                    final_message += "\nLa rúbrica asociada ha sido guardada en formato JSON y CSV."
+                messagebox.showinfo("Descarga Completada", final_message)
+            
+            self.after(0, on_success)
 
         except Exception as e:
             error_msg = f"Ocurrió un error durante la descarga: {e}"
-            self._update_progress_label("Error en la descarga.")
-            self.after(0, messagebox.showerror, "Error", error_msg)
             logger.error(f"Error al descargar entregas: {e}", exc_info=True)
+            self.after(0, self._on_download_error, error_msg)
 
     def handle_create_activity(self):
         logger.info("Botón 'Crear Actividad' pulsado.")
@@ -383,5 +398,3 @@ class ActivitiesMenu(ctk.CTkFrame):
         #     self.activity_desc_textbox.delete("1.0", "end")
         #     for var in self.submission_checkboxes.values():
         #         var.set("0")
-        # else:
-        #     messagebox.showerror("Error", self.client.error_message or "Ocurrió un error al crear la actividad.")

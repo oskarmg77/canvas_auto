@@ -53,12 +53,8 @@ class App:
         para seleccionar un nuevo curso.
         """
         while True:
-            courses = self.client.get_active_courses()
-            if courses is None:
-                messagebox.showerror("Error", self.client.error_message or "No se pudo obtener la lista de cursos.")
-                break  # Salir del bucle si no se pueden obtener los cursos
-
-            course_win = CourseWindow(courses)
+            # Pasamos el cliente directamente a CourseWindow para que gestione la carga de cursos.
+            course_win = CourseWindow(self.client)
             selected_course_id = course_win.get_selected_course()
 
             if not selected_course_id:
