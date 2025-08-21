@@ -12,6 +12,7 @@ sys.path.append(project_root)
 
 from app.utils import config_manager
 from app.api.canvas_client import CanvasClient
+from app.api.gemini_client import HybridEvaluator
 from app.gui.login_window import LoginWindow
 from app.gui.course_window import CourseWindow
 from app.gui.main_window import MainWindow
@@ -33,6 +34,15 @@ class App:
             messagebox.showerror("Error de Conexión", self.client.error_message)
             return
 
+        # Extraer la clave de Gemini del mismo archivo de configuración
+        gemini_api_key = credentials.get('gemini_api_key') if credentials else None
+
+        # Crear una única instancia del cliente de Gemini
+        try:
+            self.gemini_evaluator = HybridEvaluator(api_key=gemini_api_key, logger=logger)
+        except ImportError as e:
+            logger.warning(f"No se pudo inicializar Gemini: {e}. La función de evaluación no estará disponible.")
+            self.gemini_evaluator = None
         self.run_main_flow()
 
     def handle_login(self):
@@ -61,7 +71,7 @@ class App:
                 logger.info("No se seleccionó ningún curso. Saliendo de la aplicación.")
                 break  # El usuario cerró la ventana de selección
 
-            main_app = MainWindow(client=self.client, course_id=selected_course_id)
+            main_app = MainWindow(client=self.client, course_id=selected_course_id, gemini_evaluator=self.gemini_evaluator)
             main_app.mainloop()
 
             # Si la ventana principal se cierra con el flag de reinicio, el bucle continuará.

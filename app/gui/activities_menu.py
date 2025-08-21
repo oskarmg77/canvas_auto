@@ -7,6 +7,9 @@ from app.utils.logger_config import logger
 import os
 import threading
 import urllib.parse
+import json
+import csv
+import time
 import re
 
 # Diccionario para los tipos de entrega. Clave: API, Valor: Texto en GUI
@@ -17,9 +20,10 @@ SUBMISSION_TYPES = {
 }
 
 class ActivitiesMenu(ctk.CTkFrame):
-    def __init__(self, parent, client, course_id, main_window):
+    def __init__(self, parent, client, gemini_evaluator, course_id, main_window):
         super().__init__(parent)
         self.client = client
+        self.gemini_evaluator = gemini_evaluator
         self.course_id = course_id
         self.main_window = main_window # Referencia a la ventana principal para usar la barra de estado
         self.submission_checkboxes = {}  # Para almacenar las variables de los checkboxes
@@ -93,6 +97,22 @@ class ActivitiesMenu(ctk.CTkFrame):
         )
         self.selected_assignment_label.grid(row=0, column=0, padx=10, pady=5, sticky="ew")
 
+        # --- Frame para los botones de acción (Descargar / Evaluar) ---
+        actions_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
+        actions_frame.grid(row=1, column=0, sticky="ew", pady=(5,0))
+
+        self.download_button = ctk.CTkButton(
+            actions_frame, text="Descargar Entregas", state="disabled",
+            command=self._prompt_download_location
+        )
+        self.download_button.pack(side="left", padx=10)
+
+        self.evaluate_button = ctk.CTkButton(
+            actions_frame, text="Evaluar con IA (Gemini)", state="disabled",
+            command=self._start_evaluation_thread
+        )
+        self.evaluate_button.pack(side="left", padx=10)
+
         # Frame para la lista de actividades
         self.assignments_frame = ctk.CTkScrollableFrame(download_tab, label_text="Actividades del Curso")
         self.assignments_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
@@ -163,6 +183,8 @@ class ActivitiesMenu(ctk.CTkFrame):
         state = "normal" if enable else "disabled"
         for btn in self.assignment_buttons.values():
             btn.configure(state=state)
+        self.download_button.configure(state="disabled")
+        self.evaluate_button.configure(state="disabled")
 
     def _select_assignment(self, assignment_id):
         """Se llama al pulsar un botón de actividad. Inicia la obtención de detalles."""
@@ -183,46 +205,70 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.active_thread = threading.Thread(target=self._fetch_and_prompt_download, args=(assignment_id,))
         self.active_thread.start()
 
+    def _update_action_buttons(self, summary: dict):
+        """Actualiza el estado de los botones de acción basado en el resumen."""
+        self.download_button.configure(state="normal")
+        
+        # Activar el botón de evaluación solo si hay rúbrica y el cliente de Gemini está disponible
+        if summary.get("has_rubric") and self.gemini_evaluator:
+            self.evaluate_button.configure(state="normal")
+        else:
+            self.evaluate_button.configure(state="disabled")
+            if not self.gemini_evaluator:
+                self.main_window.update_status("Evaluación no disponible: Módulo Gemini no cargado.", 5000)
+            elif not summary.get("has_rubric"):
+                 self.main_window.update_status("Evaluación no disponible: La actividad no tiene rúbrica.", 5000)
+
+
     def _fetch_and_prompt_download(self, assignment_id):
-        """Obtiene el resumen y luego pregunta al usuario si desea descargar."""
+        """Obtiene el resumen de la actividad y actualiza la UI."""
         try:
             summary = self.client.get_assignment_submission_summary(self.course_id, assignment_id)
             if not summary:
                 raise Exception(self.client.error_message or "La API no devolvió un resumen.")
 
-            def prompt_on_main_thread():
+            # Guardamos el resumen para usarlo después
+            self.assignments[assignment_id]['summary'] = summary
+
+            def update_ui_on_main_thread():
                 self.main_window.hide_progress_bar()
                 self._enable_assignment_buttons(True)
                 assignment_name = self.assignments[assignment_id]["name"]
                 info_message = (
                     f"Actividad: {assignment_name}\n\n"
                     f"• Total de entregas: {summary['submission_count']}\n"
-                    f"• Entregas con PDF: {summary['pdf_submission_count']}\n"
-                    f"• Tiene rúbrica asociada: {'Sí' if summary['has_rubric'] else 'No'}\n\n"
-                    "¿Deseas iniciar la descarga?"
+                    f"• Entregas con PDF (aprox): {summary['pdf_submission_count']}\n"
+                    f"• Tiene rúbrica asociada: {'Sí' if summary['has_rubric'] else 'No'}"
                 )
-                self.main_window.update_status("Esperando confirmación del usuario...")
+                self.selected_assignment_label.configure(text=info_message)
+                self.main_window.update_status("Resumen cargado. Selecciona una acción.", 5000)
+                self._update_action_buttons(summary)
 
-                if messagebox.askyesno("Confirmar Descarga", info_message):
-                    self._start_download_thread(assignment_id, summary)
-                else:
-                    self.main_window.update_status("Descarga cancelada.", clear_after_ms=4000)
-                    self.selected_assignment_label.configure(text="Selecciona una actividad de la lista...")
-                    self.selected_assignment_id = None
-
-            self.after(0, prompt_on_main_thread)
+            self.after(0, update_ui_on_main_thread)
 
         except Exception as e:
             logger.error(f"Error al obtener resumen de la actividad {assignment_id}: {e}")
             self.after(0, self._on_download_error, "Error al obtener el resumen de la actividad.")
 
-    def _start_download_thread(self, assignment_id, summary):
-        """Inicia el proceso de descarga de archivos en un nuevo hilo."""
+    def _prompt_download_location(self):
+        """Pide al usuario una carpeta y luego inicia la descarga."""
+        if not self.selected_assignment_id: return
+
+        assignment_id = self.selected_assignment_id
+        summary = self.assignments[assignment_id].get('summary')
+        if not summary:
+            messagebox.showerror("Error", "No se ha cargado el resumen de la actividad.")
+            return
+
         base_dir = filedialog.askdirectory(title="Selecciona la carpeta base para las descargas")
         if not base_dir:
             self.main_window.update_status("Descarga cancelada.", clear_after_ms=4000)
             return
 
+        self._start_download_thread(assignment_id, summary, base_dir)
+
+    def _start_download_thread(self, assignment_id, summary, base_dir):
+        """Inicia el proceso de descarga de archivos en un nuevo hilo."""
         self.main_window.update_status("Iniciando descarga...")
         self.main_window.show_progress_bar() # Barra de progreso determinada
         self._enable_assignment_buttons(False)
@@ -231,6 +277,175 @@ class ActivitiesMenu(ctk.CTkFrame):
             target=self._handle_download_submissions, args=(assignment_id, summary, base_dir)
         )
         self.active_thread.start()
+
+    def _start_evaluation_thread(self):
+        """Pide ubicación y comienza el hilo de evaluación con IA."""
+        if not self.selected_assignment_id: return
+        
+        assignment_id = self.selected_assignment_id
+        summary = self.assignments[assignment_id].get('summary')
+
+        base_dir = filedialog.askdirectory(title="Selecciona la carpeta base para las descargas")
+        if not base_dir:
+            self.main_window.update_status("Evaluación cancelada.", clear_after_ms=4000)
+            return
+
+        self.main_window.update_status("Iniciando evaluación con IA...")
+        self.main_window.show_progress_bar()
+        self._enable_assignment_buttons(False)
+
+        self.active_thread = threading.Thread(
+            target=self._handle_evaluation, args=(assignment_id, summary, base_dir)
+        )
+        self.active_thread.start()
+
+    def _handle_evaluation(self, assignment_id, summary, base_dir):
+        """Lógica de evaluación con Gemini en un hilo separado."""
+        try:
+            # 1. Crear estructura de carpetas (reutilizando lógica)
+            assignment = self.assignments[assignment_id]
+            course = self.client.get_course(self.course_id)
+            course_abbreviation = self._create_abbreviation(course.name)
+            assignment_abbreviation = self._create_abbreviation(assignment['name'])
+            activity_path = Path(base_dir) / f"{self.course_id} - {course_abbreviation}" / f"{assignment_id} - {assignment_abbreviation}"
+            activity_path.mkdir(parents=True, exist_ok=True)
+
+            # 2. Descargar la rúbrica como JSON
+            self.after(0, self.main_window.update_status, "Descargando rúbrica...")
+            rubric_path = activity_path / f"rubrica_{assignment_id}.json"
+            success = self.client.export_rubric_to_json(self.course_id, summary["rubric_id"], rubric_path)
+            if not success:
+                raise Exception("No se pudo descargar la rúbrica.")
+            
+            with open(rubric_path, 'r', encoding='utf-8') as f:
+                rubric_json = json.load(f)
+
+            # 3. Obtener entregas y procesar
+            self.after(0, self.main_window.update_status, "Obteniendo lista de entregas...")
+            submissions = self.client.get_all_submissions(self.course_id, assignment_id)
+            
+            evaluations = []
+            total_submissions = len(submissions)
+            
+            for i, sub in enumerate(submissions):
+                progress = (i + 1) / total_submissions
+                student_name = self._sanitize_filename(sub.get("user", {}).get("name", "sin_nombre"))
+                self.after(0, self.main_window.update_status, f"Evaluando a {student_name} ({i+1}/{total_submissions})")
+                self.after(0, self.main_window.update_progress, progress)
+
+                # Encontrar el PDF en la entrega
+                pdf_attachment = next((att for att in sub.get("attachments", []) if att.get("filename", "").lower().endswith(".pdf")), None)
+                if not pdf_attachment:
+                    logger.warning(f"Sin PDF para {student_name}, saltando evaluación.")
+                    continue
+
+                # Descargar PDF a una carpeta temporal o de la actividad
+                pdf_path = activity_path / student_name / self._sanitize_filename(pdf_attachment["filename"], decode_url=True)
+                self.client.download_file(pdf_attachment["url"], pdf_path.parent, pdf_path.name)
+
+                # 4. Construir prompt y llamar a Gemini
+                prompt = self._build_evaluation_prompt(rubric_json)
+                schema = "{'evaluacion': [{'criterio': str, 'puntuacion': float, 'justificacion': str}]}"
+                
+                # Aquí se realiza la llamada a la API. El cliente de Gemini ya gestiona los reintentos.
+                result_json = self.gemini_evaluator.evaluate_pdf(str(pdf_path), schema_hint=schema)
+                result_json['alumno'] = student_name
+                evaluations.append(result_json)
+
+                # Idea para el límite de API: añadir un pequeño retardo
+                time.sleep(1.5) # Pausa de 1.5s para no saturar el plan gratuito (aprox 40 RPM)
+
+            # 5. Guardar resultados en CSV
+            self.after(0, self.main_window.update_status, "Guardando resultados...")
+            self._save_evaluations_to_csv(evaluations, activity_path / "evaluaciones_gemini.csv")
+
+            # 6. Finalización
+            def on_success():
+                self.main_window.hide_progress_bar()
+                self._enable_assignment_buttons(True)
+                self.main_window.update_status("¡Evaluación completada!", clear_after_ms=5000)
+                messagebox.showinfo("Evaluación Completada", f"Se han evaluado {len(evaluations)} entregas con PDF.\nEl resultado se ha guardado en 'evaluaciones_gemini.csv'.")
+            
+            self.after(0, on_success)
+
+        except Exception as e:
+            error_msg = f"Ocurrió un error durante la evaluación: {e}"
+            logger.error(f"Error al evaluar entregas: {e}", exc_info=True)
+            self.after(0, self._on_download_error, error_msg)
+
+    def _save_evaluations_to_csv(self, evaluations: list, csv_path: Path):
+        """Guarda los resultados de la evaluación de Gemini en un archivo CSV."""
+        if not evaluations:
+            logger.warning("No se generaron evaluaciones para guardar en CSV.")
+            return
+
+        try:
+            # Extraer todas las claves de los criterios del primer resultado para crear las cabeceras.
+            # Esto asume que todos los resultados tienen los mismos criterios.
+            first_result = evaluations[0]
+            criteria_list = first_result.get('evaluacion', [])
+
+            # Crear las cabeceras dinámicamente
+            fieldnames = ['alumno']
+            for crit in criteria_list:
+                crit_name = crit.get('criterio', 'criterio_desconocido').strip()
+                # Saneamos el nombre del criterio para que sea un nombre de columna válido
+                sanitized_crit_name = re.sub(r'\s+', '_', crit_name.lower())
+                sanitized_crit_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_crit_name)
+                fieldnames.append(f"{sanitized_crit_name}_puntuacion")
+                fieldnames.append(f"{sanitized_crit_name}_justificacion")
+
+            with csv_path.open('w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writeheader()
+
+                for result in evaluations:
+                    row = {'alumno': result.get('alumno', 'N/A')}
+                    for crit_eval in result.get('evaluacion', []):
+                        crit_name = crit_eval.get('criterio', 'criterio_desconocido').strip()
+                        sanitized_crit_name = re.sub(r'\s+', '_', crit_name.lower())
+                        sanitized_crit_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_crit_name)
+                        row[f"{sanitized_crit_name}_puntuacion"] = crit_eval.get('puntuacion')
+                        row[f"{sanitized_crit_name}_justificacion"] = crit_eval.get('justificacion')
+                    writer.writerow(row)
+
+            logger.info(f"Resultados de la evaluación guardados en: {csv_path}")
+
+        except Exception as e:
+            logger.error(f"Error al guardar el archivo CSV de evaluaciones: {e}", exc_info=True)
+            # Informar al usuario en el hilo principal
+            self.after(0, messagebox.showerror, "Error de Escritura", f"No se pudo guardar el archivo CSV de resultados: {e}")
+
+    def _build_evaluation_prompt(self, rubric_json: dict) -> str:
+        """Construye el prompt para Gemini usando la rúbrica."""
+        # Filtramos la rúbrica para enviar solo la información esencial al modelo,
+        # evitando sobrecargarlo con IDs y metadatos innecesarios.
+        criteria_data = []
+        for crit in rubric_json.get('data', []):
+            ratings_data = [
+                {'description': r.get('description'), 'points': r.get('points')}
+                for r in crit.get('ratings', [])
+            ]
+            criteria_data.append({
+                'description': crit.get('description'),
+                'points': crit.get('points'),
+                'ratings': ratings_data
+            })
+
+        rubric_text = json.dumps(criteria_data, ensure_ascii=False, indent=2)
+        return (
+            "Eres un asistente de profesor universitario experto. Tu tarea es evaluar la entrega de un alumno (archivo PDF adjunto) "
+            "utilizando la siguiente rúbrica de evaluación. Debes ser objetivo y basar tu puntuación y justificación "
+            "únicamente en el contenido del documento y los criterios de la rúbrica.\n\n"
+            "RÚBRICA (en formato JSON):\n"
+            f"{rubric_text}\n\n"
+            "INSTRUCCIONES DETALLADAS:\n"
+            "1. **Analiza el PDF adjunto** en su totalidad para comprender el trabajo del alumno.\n"
+            "2. **Evalúa cada criterio**: Para cada criterio de la rúbrica, elige el nivel de 'rating' que mejor se ajuste al contenido del PDF, asigna los 'points' correspondientes y escribe una 'justificacion' clara y concisa, haciendo referencia a partes específicas del documento si es posible.\n"
+            "3. **Formato de Salida OBLIGATORIO**: Devuelve un ÚNICO objeto JSON válido y minificado. No incluyas explicaciones, comentarios, ni ```json ... ```. La respuesta debe ser exclusivamente el JSON.\n"
+            "4. **Esquema del JSON**: El JSON debe tener una clave 'evaluacion' que contenga una lista de objetos. Cada objeto debe tener tres claves: 'criterio' (la descripción del criterio), 'puntuacion' (un número), y 'justificacion' (un string).\n\n"
+            "Ejemplo de la estructura de salida esperada: {'evaluacion': [{'criterio': 'Análisis del problema', 'puntuacion': 4.5, 'justificacion': 'El análisis es correcto y detallado, aunque podría mejorar la sección 2.1.'}]}"
+        )
 
     def _create_abbreviation(self, text: str) -> str:
         """Crea una abreviatura a partir de un texto, usando las iniciales de las palabras significativas."""

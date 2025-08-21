@@ -4,12 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="Traducido al español un comentario en el main.">
+    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="Después de distintos fallos se tuvo que revertir la funcionalidad de gemini.">
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Readme.md" beforeDir="false" afterPath="$PROJECT_DIR$/Readme.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/api/gemini_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/gemini_client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/gui/activities_menu.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/activities_menu.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/gui/login_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/login_window.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/gui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/gui/quizzes_menu.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/quizzes_menu.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,6 +27,7 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RESET_MODE" value="HARD" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
@@ -83,8 +86,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-e03c56caf84a-JavaScript-PY-252.23892.439" />
-        <option value="bundled-python-sdk-b3ae9b5d7125-f0eec537fc84-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.23892.439" />
+        <option value="bundled-js-predefined-d6986cc7102b-e03c56caf84a-JavaScript-PY-252.23892.515" />
+        <option value="bundled-python-sdk-7e47963ff851-f0eec537fc84-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.23892.515" />
       </set>
     </attachedChunks>
   </component>
@@ -114,6 +117,9 @@
       <workItem from="1754909165903" duration="2679000" />
       <workItem from="1754979769524" duration="379000" />
       <workItem from="1755102850708" duration="356000" />
+      <workItem from="1755774358839" duration="4527000" />
+      <workItem from="1755787477707" duration="207000" />
+      <workItem from="1755787722640" duration="4788000" />
     </task>
     <task id="LOCAL-00001" summary="Implementa flujo de login y selección de curso">
       <option name="closed" value="true" />
@@ -263,6 +269,7 @@
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/canvas_auto$course_window.coverage" NAME="course_window Coverage Results" MODIFIED="1753873132715" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
     <SUITE FILE_PATH="coverage/canvas_auto$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1754314119580" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
-    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1754910975574" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1755791925254" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/canvas_auto$gemini_tester.coverage" NAME="gemini_tester Coverage Results" MODIFIED="1755624565131" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tools" />
   </component>
 </project>

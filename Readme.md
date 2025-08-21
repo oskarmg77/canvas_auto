@@ -32,6 +32,11 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
             -   **Nombres de carpeta abreviados** y saneados para cursos y tareas, evitando errores de rutas largas en Windows.
             -   Sobrescritura automática de archivos existentes sin preguntar.
 
+        -   **Evaluación Asistida por IA (Gemini)**:
+            -   Opción para evaluar automáticamente las entregas en PDF que tengan una rúbrica asociada.
+            -   Utiliza un modelo multimodal (Gemini 1.5) para analizar el contenido del documento, incluyendo texto e imágenes.
+            -   Genera un archivo `evaluaciones_gemini.csv` en la carpeta de la actividad con las puntuaciones y justificaciones detalladas para cada criterio.
+            -   Proceso optimizado para realizar una única llamada a la API por documento, respetando los límites de uso.
 ### Formato JSON para Preguntas de Quiz
 
 Para usar la creación masiva de preguntas, proporciona un JSON con la siguiente estructura. Puedes pegar una lista de preguntas `[...]` o un objeto `{"items": [...]}`.
@@ -67,8 +72,9 @@ El siguiente ejemplo muestra todos los campos disponibles:
 canvas_auto/
 ├── app/                    # Módulo principal de la aplicación
 │ ├── api/                  # Comunicación con la API de Canvas LMS
-│ │ ├── init.py             # Inicializador del paquete API
-│ │ └── canvas_client.py    # Cliente para interactuar con la API de Canvas
+│ │ ├── __init__.py         # Inicializador del paquete API
+│ │ ├── canvas_client.py    # Cliente para interactuar con la API de Canvas
+│ │ └── gemini_client.py    # Cliente para la API de Google Gemini
 │ ├── assets/               # Recursos gráficos y estáticos
 │ │ └── icons/              # Iconos usados en la interfaz gráfica
 │ │ ├── activity_icon.png   # Icono para actividades
@@ -76,11 +82,11 @@ canvas_auto/
 │ │ ├── quiz_icon.png       # Icono para quizzes
 │ │ └── rubric_icon.png     # Icono para rúbricas
 │ ├── core/                 # Lógica de negocio o automatizaciones
-│ │ ├── init.py             # Inicializador del paquete core
+│ │ ├── __init__.py         # Inicializador del paquete core
 │ │ └── automation.py       # Funciones de automatización (pendientes o en uso)
 │ ├── gui/                  # Módulos de la interfaz gráfica (CustomTkinter)
 │ │ ├── logs/               # Carpeta para logs específicos de GUI (si aplica)
-│ │ ├── init.py             # Inicializador del paquete GUI
+│ │ ├── __init__.py         # Inicializador del paquete GUI
 │ │ ├── activities_menu.py  # Pantalla de gestión de actividades
 │ │ ├── course_window.py    # Pantalla de selección de curso
 │ │ ├── login_window.py     # Pantalla de inicio de sesión
@@ -88,7 +94,7 @@ canvas_auto/
 │ │ ├── quizzes_menu.py     # Pantalla de gestión de quizzes
 │ │ └── rubrics_menu.py     # Pantalla de gestión de rúbricas (creación, importación/exportación)
 │ └── utils/                # Utilidades generales
-│ ├── init.py               # Inicializador del paquete utils
+│ ├── __init__.py           # Inicializador del paquete utils
 │ ├── config_manager.py     # Gestión de configuración y credenciales
 │ ├── export_utils.py       # Funciones de exportación de datos
 │ └── logger_config.py      # Configuración del sistema de logs
@@ -127,15 +133,19 @@ canvas_auto/
     pip install -r requirements.txt
     ```
 
-4. **Ejecutar la aplicación:**
+4. **Configurar las credenciales:**
+    La primera vez que ejecutes la aplicación, se te pedirá tu URL de Canvas y un Token de API. Estos datos se guardarán en un archivo `config.json`.
+
+    Para usar la función de **evaluación con IA**, debes añadir tu clave de API de Google Gemini a este archivo. Edita `config.json` para que tenga la siguiente estructura:
+    ```json
+    {
+        "canvas_url": "https://tu-institucion.instructure.com",
+        "api_token": "tu_token_de_api_de_canvas",
+        "gemini_api_key": "tu_api_key_de_google_gemini"
+    }
+    ```
+
+5. **Ejecutar la aplicación:**
     ```bash
     python main.py
     ```
-
-## Próximos Pasos
-
-* Añadir más opciones avanzadas a la creación de actividades (fechas de entrega, publicación, etc.).
-* Implementar la edición o eliminación de elementos ya creados.
-* Refinar la interfaz de usuario.
-* Soporte para duplicar rúbricas entre cursos directamente.
-* Vista previa enriquecida para rúbricas importadas antes de crearlas.

@@ -3,6 +3,7 @@
 import customtkinter as ctk
 import webbrowser
 from app.api.canvas_client import CanvasClient
+from app.api.gemini_client import HybridEvaluator
 from tkinter import messagebox
 from .rubrics_menu import RubricsMenu
 from .activities_menu import ActivitiesMenu
@@ -15,11 +16,12 @@ from .quizzes_menu import QuizzesMenu
 
 
 class MainWindow(ctk.CTk):
-    def __init__(self, client: CanvasClient, course_id: int):
+    def __init__(self, client: CanvasClient, course_id: int, gemini_evaluator: HybridEvaluator | None):
         super().__init__()
 
         self.client = client
         self.course_id = course_id
+        self.gemini_evaluator = gemini_evaluator
         self.restart = False
 
         # --- CONFIGURACIÓN DE LA VENTANA PRINCIPAL ---
@@ -39,7 +41,7 @@ class MainWindow(ctk.CTk):
         # --- SUBMENÚS (INICIALMENTE OCULTOS) ---
         self.quizzes_frame = QuizzesMenu(self, self.client, self.course_id, self.show_main_menu)
         self.rubrics_frame = RubricsMenu(self, self.client, self.course_id, self.show_main_menu)
-        self.activities_frame = ActivitiesMenu(self, self.client, self.course_id, self)
+        self.activities_frame = ActivitiesMenu(self, self.client, self.gemini_evaluator, self.course_id, self)
 
         # --- INICIAR EL MENÚ PRINCIPAL ---
         self.setup_main_menu()
