@@ -7,6 +7,7 @@ from app.api.gemini_client import HybridEvaluator
 from tkinter import messagebox
 from .rubrics_menu import RubricsMenu
 from .activities_menu import ActivitiesMenu
+from app.utils.event_logger import log_action
 from app.utils.logger_config import logger
 
 # Importaciones necesarias para manejar imágenes
@@ -71,6 +72,7 @@ class MainWindow(ctk.CTk):
             # Si no hay nada en curso, se cierra normalmente
             self.destroy()
 
+    @log_action
     def open_main_tutorial(self):
         webbrowser.open("https://youtu.be/BqtjFDO0Gwc")
 
@@ -188,18 +190,22 @@ class MainWindow(ctk.CTk):
         self.activities_frame.grid_forget()
         self.main_menu_frame.grid(row=0, column=0, sticky="nsew")
 
+    @log_action
     def show_quizzes_menu(self):
         logger.info("Navegando al menú de quizzes.")
         self.show_frame(self.quizzes_frame)
 
+    @log_action
     def show_rubrics_menu(self):
         logger.info("Navegando al menú de rúbricas.")
         self.show_frame(self.rubrics_frame)
 
+    @log_action
     def show_activities_menu(self):
         logger.info("Navegando al menú de actividades.")
         self.show_frame(self.activities_frame)
 
+    @log_action
     def change_course(self):
         logger.info("Botón 'Seleccionar otro Curso' pulsado. Reiniciando flujo.")
         self.restart = True

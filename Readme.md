@@ -31,6 +31,7 @@ Aplicación de escritorio para automatizar tareas en la plataforma Canvas LMS, c
             -   **Descarga automática de rúbricas** asociadas en formatos JSON y CSV.
             -   **Nombres de carpeta abreviados** y saneados para cursos y tareas, evitando errores de rutas largas en Windows.
             -   Sobrescritura automática de archivos existentes sin preguntar.
+* **Registro de Eventos Detallado**: Posibilidad de activar un log que registra cada acción del usuario (como clics en botones) en un archivo `logs/gui_events.log`, ideal para depuración.
 
         -   **Evaluación Asistida por IA (Gemini)**:
             -   Opción para evaluar automáticamente las entregas en PDF que tengan una rúbrica asociada.
@@ -97,6 +98,7 @@ canvas_auto/
 │ ├── __init__.py           # Inicializador del paquete utils
 │ ├── config_manager.py     # Gestión de configuración y credenciales
 │ ├── export_utils.py       # Funciones de exportación de datos
+│ ├── event_logger.py       # Módulo para el registro de eventos de la GUI
 │ └── logger_config.py      # Configuración del sistema de logs
 ├── logs/                   # Carpeta de logs generales de la aplicación
 │ └── canvas_auto.log       # Archivo de log principal
@@ -141,11 +143,15 @@ canvas_auto/
     {
         "canvas_url": "https://tu-institucion.instructure.com",
         "api_token": "tu_token_de_api_de_canvas",
-        "gemini_api_key": "tu_api_key_de_google_gemini"
+        "gemini_api_key": "tu_api_key_de_google_gemini",
+        "enable_event_logging": true,
+        "log_level": "DEBUG"
     }
     ```
 
 5. **Ejecutar la aplicación:**
     ```bash
+    # Si estableciste "log_level": "DEBUG", el archivo canvas_auto.log contendrá
+    # información detallada de las peticiones y respuestas de la API.
     python main.py
     ```

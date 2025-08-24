@@ -25,6 +25,7 @@ import time
 try:
     import google.generativeai as genai
 except Exception:  # pragma: no cover
+
     genai = None  # Permite cargar el módulo aunque no esté instalado en el entorno
 
 try:
@@ -123,56 +124,96 @@ class HybridEvaluator:
         final_text = self._call_with_retry(self._text_model, synth_prompt)
         return self._json_from_text(final_text)
 
-    def evaluate_pdf(self, pdf_path: str, schema_hint: Optional[str] = None, pages: Optional[List[int]] = None) -> Dict[str, Any]:
+    def _upload_file_to_gemini(self, pdf_path: str) -> "genai.File":
+        """Sube un archivo a la API de Gemini y devuelve el objeto File."""
+        self.logger.info(f"Subiendo archivo a la API de Gemini: {pdf_path}")
+        # El display_name es opcional, pero útil para la depuración.
+        pdf_file = genai.upload_file(path=pdf_path, display_name=os.path.basename(pdf_path))
+        self.logger.info(f"Archivo subido con éxito. URI: {pdf_file.uri}")
+        return pdf_file
+
+    def evaluate_pdf(self, pdf_path: str, schema_hint: Optional[str] = None) -> Dict[str, Any]:
         """
-        Evalúa un PDF completo en una sola llamada a la API.
-        Extrae texto e imágenes de todas las páginas y las envía juntas.
-        Si `pages` es None, procesa todas las páginas.
+        Evalúa un PDF completo usando la API de Archivos para mayor eficiencia.
+        Sube el archivo, lo procesa y luego lo elimina.
         """
         if fitz is None:
             raise ImportError("Falta PyMuPDF. Instala con: pip install PyMuPDF")
- 
-        doc = fitz.open(pdf_path)
-        total = doc.page_count
-        page_ids = pages or list(range(total))
- 
-        # --- NUEVA ESTRATEGIA: Recopilar todo el contenido primero ---
-        all_parts: List[Any] = []
-        full_text = ""
 
-        for i in page_ids:
-            page = doc.load_page(i)
-            page_text = page.get_text("text") or ""
-            full_text += f"\n\n--- PÁGINA {i+1}/{total} ---\n{page_text}"
+        pdf_file = None
+        try:
+            # 1. Subir el archivo
+            pdf_file = self._upload_file_to_gemini(pdf_path)
 
-            if Image:  # Comprueba si PIL/Pillow se importó correctamente
-                try:
-                    pix = page.get_pixmap()
-                    img_bytes = pix.tobytes("png")
-                    pil_img = Image.open(io.BytesIO(img_bytes))
-                    all_parts.append(pil_img)
-                except Exception as e:
-                    self.logger.warning(f"No se pudo procesar la imagen de la página {i+1}: {e}")
+            # 2. Construir el prompt
+            # Ya no necesitamos extraer el texto manualmente, el modelo lo hará desde el archivo.
+            prompt = self._build_page_prompt("", 1, 1, schema_hint) # Pasamos texto vacío
 
-        # Añadimos el prompt y el texto completo al principio de la lista de partes
-        prompt = self._build_page_prompt(full_text, 1, 1, schema_hint) # Adaptamos el prompt
-        all_parts.insert(0, prompt)
+            # 3. Construir las partes de la petición
+            all_parts = [
+                prompt,
+                pdf_file # ¡Simplemente pasamos el objeto del archivo!
+            ]
 
-        # --- UNA ÚNICA LLAMADA A LA API ---
-        final_text = self._call_with_retry(self._vision_model, all_parts)
+            # 4. Llamar a la API (una única llamada)
+            final_text = self._call_with_retry(self._vision_model, all_parts)
+            return self._json_from_text(final_text)
+
+        finally:
+            # 5. Limpieza: eliminar el archivo de los servidores de Google
+            if pdf_file:
+                self.logger.info(f"Eliminando archivo de la API: {pdf_file.name}")
+                genai.delete_file(pdf_file.name)
+
+    def prepare_pdf_evaluation_request(self, pdf_file_uri: str, schema_hint: Optional[str]) -> List[Any]:
+        """
+        Prepara el contenido de una única petición de evaluación para ser usada en un lote.
+        NO la ejecuta, solo prepara la lista de partes ('contents').
+        """
+        prompt = self._build_page_prompt("", 1, 1, schema_hint)
+        uploaded_file = genai.get_file(name=pdf_file_uri)
+        # Devuelve la lista de 'contents' lista para el batch
+        return [prompt, uploaded_file]
+
+    def execute_single_request(self, contents: List[Any]) -> Dict[str, Any]:
+        """
+        Ejecuta una única petición de evaluación y devuelve el JSON parseado.
+        Diseñado para ser usado en un bucle o un pool de hilos.
+        """
+        # Reutilizamos la lógica de reintentos
+        final_text = self._call_with_retry(self._vision_model, contents)
+        # Reutilizamos la lógica de parseo de JSON
         return self._json_from_text(final_text)
-
+        
     # -------------------------- INTERNOS ---------------------------------
     def _call_with_retry(self, model, parts_or_text: Union[str, List[Any]]) -> str:
         """Llama al modelo con reintentos y backoff. Acepta string o lista multimodal."""
         last_err: Optional[Exception] = None
         for attempt in range(1, self.max_retries + 1):
             try:
+                # Log de DEBUG para el contenido enviado a Gemini
+                if self.logger.level == logging.DEBUG:
+                    log_content = []
+                    if isinstance(parts_or_text, list):
+                        for part in parts_or_text:
+                            if hasattr(part, 'category') and hasattr(part, 'threshold'): # Safety setting
+                                continue
+                            if isinstance(part, str):
+                                log_content.append(f"[Text Snippet: {part[:100]}...]")
+                            elif Image and isinstance(part, Image.Image):
+                                log_content.append(f"[Image: {part.format} {part.size}]")
+                            else:
+                                log_content.append(f"[Unknown Part: {type(part)}]")
+                    else:
+                        log_content.append(f"[Text Snippet: {parts_or_text[:100]}...]")
+                    self.logger.debug(f"Sending to Gemini model '{model.model_name}': {' '.join(log_content)}")
+
                 if isinstance(parts_or_text, list):
-                    resp = model.generate_content(parts_or_text, generation_config=self.gen_cfg.__dict__, safety_settings=self.safety)
+                    resp = model.generate_content(parts_or_text, generation_config=asdict(self.gen_cfg), safety_settings=self.safety)
                 else:
-                    resp = model.generate_content(parts_or_text, generation_config=self.gen_cfg.__dict__, safety_settings=self.safety)
+                    resp = model.generate_content(parts_or_text, generation_config=asdict(self.gen_cfg), safety_settings=self.safety)
                 if hasattr(resp, "text") and resp.text:
+                    self.logger.debug(f"Gemini Response (snippet): {resp.text[:500]}...")
                     return resp.text
                 # Algunas versiones exponen candidatos
                 if getattr(resp, "candidates", None):

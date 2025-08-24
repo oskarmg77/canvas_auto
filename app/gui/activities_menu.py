@@ -2,14 +2,23 @@
 
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
+
+from app.utils.event_logger import log_action
 from pathlib import Path
 from app.utils.logger_config import logger
 import os
 import threading
 import urllib.parse
 import json
+import queue
 import csv
+import concurrent.futures
 import time
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 import re
 
 # Diccionario para los tipos de entrega. Clave: API, Valor: Texto en GUI
@@ -31,6 +40,8 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.assignment_buttons = {}
         self.selected_assignment_id = None
         self.active_thread = None  # Para controlar el hilo de descarga
+        self.queue = queue.Queue() # Cola para comunicación thread-safe
+        self.stop_polling = False # Flag para detener el sondeo de la cola
 
         back_button = ctk.CTkButton(self, text="< Volver al Menú Principal", command=self.main_window.show_main_menu)
         back_button.pack(anchor="nw", padx=10, pady=10)
@@ -250,6 +261,7 @@ class ActivitiesMenu(ctk.CTkFrame):
             logger.error(f"Error al obtener resumen de la actividad {assignment_id}: {e}")
             self.after(0, self._on_download_error, "Error al obtener el resumen de la actividad.")
 
+    @log_action
     def _prompt_download_location(self):
         """Pide al usuario una carpeta y luego inicia la descarga."""
         if not self.selected_assignment_id: return
@@ -278,6 +290,7 @@ class ActivitiesMenu(ctk.CTkFrame):
         )
         self.active_thread.start()
 
+    @log_action
     def _start_evaluation_thread(self):
         """Pide ubicación y comienza el hilo de evaluación con IA."""
         if not self.selected_assignment_id: return
@@ -290,6 +303,13 @@ class ActivitiesMenu(ctk.CTkFrame):
             self.main_window.update_status("Evaluación cancelada.", clear_after_ms=4000)
             return
 
+        # Limpiar la cola de mensajes antiguos antes de empezar un nuevo proceso
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except queue.Empty:
+                break
+
         self.main_window.update_status("Iniciando evaluación con IA...")
         self.main_window.show_progress_bar()
         self._enable_assignment_buttons(False)
@@ -298,11 +318,45 @@ class ActivitiesMenu(ctk.CTkFrame):
             target=self._handle_evaluation, args=(assignment_id, summary, base_dir)
         )
         self.active_thread.start()
+        self.stop_polling = False # Asegurarse de que el sondeo esté activo
+        self._process_queue() # Iniciar el procesador de la cola
+
+    def _process_queue(self):
+        """Procesa mensajes de la cola para actualizar la GUI de forma segura."""
+        if self.stop_polling:
+            return
+        try:
+            while not self.queue.empty():
+                message_type, data = self.queue.get_nowait()
+
+                if message_type == "update_status":
+                    self.main_window.update_status(data[0], data[1] if len(data) > 1 else 0)
+                elif message_type == "update_progress":
+                    self.main_window.update_progress(data)
+                elif message_type == "show_progress_bar":
+                    self.main_window.show_progress_bar(**data)
+                elif message_type == "hide_progress_bar":
+                    self.main_window.hide_progress_bar()
+                elif message_type == "evaluation_success":
+                    self._on_evaluation_success(data)
+                elif message_type == "evaluation_error":
+                    self._on_download_error(data)
+                elif message_type == "evaluation_finished":
+                    self.stop_polling = True # Detener el sondeo
+                    self._enable_assignment_buttons(True)
+                    self.main_window.update_status("Proceso finalizado.", 5000)
+
+        except queue.Empty:
+            pass
+        finally:
+            if not self.stop_polling:
+                self.after(100, self._process_queue) # Volver a comprobar en 100ms
 
     def _handle_evaluation(self, assignment_id, summary, base_dir):
-        """Lógica de evaluación con Gemini en un hilo separado."""
+        """Lógica de evaluación con Gemini usando la API de Archivos y de Lotes."""
+        uploaded_files = {}  # {student_name: gemini_file_object} 
         try:
-            # 1. Crear estructura de carpetas (reutilizando lógica)
+            # --- PREPARACIÓN ---
             assignment = self.assignments[assignment_id]
             course = self.client.get_course(self.course_id)
             course_abbreviation = self._create_abbreviation(course.name)
@@ -310,68 +364,133 @@ class ActivitiesMenu(ctk.CTkFrame):
             activity_path = Path(base_dir) / f"{self.course_id} - {course_abbreviation}" / f"{assignment_id} - {assignment_abbreviation}"
             activity_path.mkdir(parents=True, exist_ok=True)
 
-            # 2. Descargar la rúbrica como JSON
-            self.after(0, self.main_window.update_status, "Descargando rúbrica...")
+            self.queue.put(("update_status", ("Descargando rúbrica...",)))
             rubric_path = activity_path / f"rubrica_{assignment_id}.json"
-            success = self.client.export_rubric_to_json(self.course_id, summary["rubric_id"], rubric_path)
-            if not success:
+            if not self.client.export_rubric_to_json(self.course_id, summary["rubric_id"], rubric_path):
                 raise Exception("No se pudo descargar la rúbrica.")
-            
+
             with open(rubric_path, 'r', encoding='utf-8') as f:
                 rubric_json = json.load(f)
 
-            # 3. Obtener entregas y procesar
-            self.after(0, self.main_window.update_status, "Obteniendo lista de entregas...")
+            self.queue.put(("update_status", ("Obteniendo lista de entregas...",)))
             submissions = self.client.get_all_submissions(self.course_id, assignment_id)
-            
-            evaluations = []
+
+            # --- FASE 1: Descargar PDFs y subirlos a la API de Gemini ---
             total_submissions = len(submissions)
-            
+            self.queue.put(("update_progress", 0))
             for i, sub in enumerate(submissions):
                 progress = (i + 1) / total_submissions
                 student_name = self._sanitize_filename(sub.get("user", {}).get("name", "sin_nombre"))
-                self.after(0, self.main_window.update_status, f"Evaluando a {student_name} ({i+1}/{total_submissions})")
-                self.after(0, self.main_window.update_progress, progress)
+                self.queue.put(("update_status", (f"Preparando a {student_name} ({i+1}/{total_submissions})",)))
+                self.queue.put(("update_progress", progress))
 
-                # Encontrar el PDF en la entrega
-                pdf_attachment = next((att for att in sub.get("attachments", []) if att.get("filename", "").lower().endswith(".pdf")), None)
+                all_attachments = []
+                if "attachments" in sub: all_attachments.extend(sub["attachments"])
+                if "submission_history" in sub:
+                    for history_item in sub["submission_history"]:
+                        if "attachments" in history_item: all_attachments.extend(history_item["attachments"])
+
+                pdf_attachment = next((att for att in all_attachments if att.get("filename", "").lower().endswith(".pdf")), None)
                 if not pdf_attachment:
-                    logger.warning(f"Sin PDF para {student_name}, saltando evaluación.")
+                    logger.warning(f"Sin PDF para {student_name}, saltando.")
                     continue
 
-                # Descargar PDF a una carpeta temporal o de la actividad
                 pdf_path = activity_path / student_name / self._sanitize_filename(pdf_attachment["filename"], decode_url=True)
                 self.client.download_file(pdf_attachment["url"], pdf_path.parent, pdf_path.name)
 
-                # 4. Construir prompt y llamar a Gemini
-                prompt = self._build_evaluation_prompt(rubric_json)
-                schema = "{'evaluacion': [{'criterio': str, 'puntuacion': float, 'justificacion': str}]}"
-                
-                # Aquí se realiza la llamada a la API. El cliente de Gemini ya gestiona los reintentos.
-                result_json = self.gemini_evaluator.evaluate_pdf(str(pdf_path), schema_hint=schema)
-                result_json['alumno'] = student_name
-                evaluations.append(result_json)
+                # Subir el archivo a Gemini y guardar su referencia
+                gemini_file = self.gemini_evaluator._upload_file_to_gemini(str(pdf_path))
+                uploaded_files[student_name] = gemini_file
 
-                # Idea para el límite de API: añadir un pequeño retardo
-                time.sleep(1.5) # Pausa de 1.5s para no saturar el plan gratuito (aprox 40 RPM)
+            # --- FASE 2: Ejecutar las evaluaciones en paralelo ---
+            self.queue.put(("update_status", ("Construyendo y enviando evaluaciones a la IA...",)))
+            schema = "{'evaluacion': [{'criterio': str, 'puntuacion': float, 'justificacion': str}]}"
 
-            # 5. Guardar resultados en CSV
-            self.after(0, self.main_window.update_status, "Guardando resultados...")
+            if not uploaded_files:
+                 raise Exception("No se encontraron entregas con PDF para evaluar.")
+
+            self.queue.put(("show_progress_bar", {"indeterminate": True}))
+            
+            # Usaremos un ThreadPoolExecutor para enviar las peticiones concurrentemente.
+            MAX_WORKERS = 8
+            evaluations = []
+            future_to_student = {}
+
+            quota_exceeded = False
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                # Preparamos y enviamos todas las tareas al pool
+                for student_name, gemini_file in uploaded_files.items():
+                    contents = self.gemini_evaluator.prepare_pdf_evaluation_request(gemini_file.name, schema)
+                    future = executor.submit(self.gemini_evaluator.execute_single_request, contents)
+                    future_to_student[future] = student_name
+
+                # --- FASE 3: Procesar resultados a medida que se completan ---
+                self.queue.put(("update_status", ("Esperando y procesando respuestas de la IA...",)))
+                self.queue.put(("show_progress_bar", {"indeterminate": False}))
+
+                total_futures = len(future_to_student)
+                for i, future in enumerate(concurrent.futures.as_completed(future_to_student)):
+                    if quota_exceeded: # Si ya sabemos que la cuota se excedió, cancelamos el resto.
+                        future.cancel()
+                        continue
+
+                    student_name = future_to_student[future]
+                    progress = (i + 1) / total_futures
+                    self.queue.put(("update_status", (f"Procesando resultado de {student_name} ({i+1}/{total_futures})",)))
+                    self.queue.put(("update_progress", progress))
+                    try:
+                        # .result() obtiene el resultado de la tarea. Si hubo una excepción, la relanza.
+                        result_json = future.result()
+                        if "error" in result_json:
+                            logger.error(f"Error en la respuesta para {student_name}: {result_json['error']}")
+                            continue
+                        result_json['alumno'] = student_name
+                        evaluations.append(result_json)
+                    except Exception as e:
+                        error_str = str(e)
+                        logger.error(f"Error en la evaluación de {student_name}: {error_str}", exc_info=False) # exc_info=False para no llenar el log con tracebacks de cuota
+                        # ¡Detección inteligente del error de cuota!
+                        if "429" in error_str and "quota" in error_str:
+                            quota_exceeded = True
+                            msg = ("Se ha excedido la cuota diaria de la API de Gemini (plan gratuito).\n\n"
+                                   "El proceso se detendrá. Los resultados obtenidos hasta ahora se guardarán.\n"
+                                   "Por favor, inténtalo de nuevo mañana o considera un plan de pago de Google.")
+                            self.queue.put(("evaluation_error", msg))
+
+
+            self.queue.put(("update_status", ("Guardando resultados...",)))
             self._save_evaluations_to_csv(evaluations, activity_path / "evaluaciones_gemini.csv")
 
-            # 6. Finalización
-            def on_success():
-                self.main_window.hide_progress_bar()
-                self._enable_assignment_buttons(True)
-                self.main_window.update_status("¡Evaluación completada!", clear_after_ms=5000)
-                messagebox.showinfo("Evaluación Completada", f"Se han evaluado {len(evaluations)} entregas con PDF.\nEl resultado se ha guardado en 'evaluaciones_gemini.csv'.")
-            
-            self.after(0, on_success)
+            # --- Finalización Exitosa ---
+            if not quota_exceeded:
+                self.queue.put(("evaluation_success", len(evaluations)))
 
         except Exception as e:
             error_msg = f"Ocurrió un error durante la evaluación: {e}"
             logger.error(f"Error al evaluar entregas: {e}", exc_info=True)
-            self.after(0, self._on_download_error, error_msg)
+            self.queue.put(("evaluation_error", error_msg))
+
+        finally:
+            # --- FASE 4: Limpieza de archivos subidos ---
+            self.queue.put(("update_status", ("Limpiando archivos temporales de la API...",)))
+            for student_name, gemini_file in uploaded_files.items():
+                try:
+                    logger.info(f"Eliminando archivo {gemini_file.name} de {student_name}...")
+                    genai.delete_file(gemini_file.name)
+                    logger.info(f"Archivo {gemini_file.name} de {student_name} eliminado correctamente.")
+                except Exception as e:
+                    logger.error(f"No se pudo eliminar el archivo {gemini_file.name}: {e}")
+            self.queue.put(("evaluation_finished", None))
+
+    def _on_evaluation_success(self, count):
+        """Se llama cuando la evaluación en lote termina correctamente."""
+        self.main_window.hide_progress_bar()
+        self._enable_assignment_buttons(True)
+        self.main_window.update_status("¡Evaluación completada!", clear_after_ms=5000)
+        messagebox.showinfo(
+            "Evaluación Completada",
+            f"Se han evaluado {count} entregas con PDF.\nEl resultado se ha guardado en 'evaluaciones_gemini.csv'."
+        )
 
     def _save_evaluations_to_csv(self, evaluations: list, csv_path: Path):
         """Guarda los resultados de la evaluación de Gemini en un archivo CSV."""
@@ -443,7 +562,8 @@ class ActivitiesMenu(ctk.CTkFrame):
             "1. **Analiza el PDF adjunto** en su totalidad para comprender el trabajo del alumno.\n"
             "2. **Evalúa cada criterio**: Para cada criterio de la rúbrica, elige el nivel de 'rating' que mejor se ajuste al contenido del PDF, asigna los 'points' correspondientes y escribe una 'justificacion' clara y concisa, haciendo referencia a partes específicas del documento si es posible.\n"
             "3. **Formato de Salida OBLIGATORIO**: Devuelve un ÚNICO objeto JSON válido y minificado. No incluyas explicaciones, comentarios, ni ```json ... ```. La respuesta debe ser exclusivamente el JSON.\n"
-            "4. **Esquema del JSON**: El JSON debe tener una clave 'evaluacion' que contenga una lista de objetos. Cada objeto debe tener tres claves: 'criterio' (la descripción del criterio), 'puntuacion' (un número), y 'justificacion' (un string).\n\n"
+            "4. **Esquema del JSON**: El JSON debe tener una clave 'evaluacion' que contenga una lista de objetos. Cada objeto debe tener tres claves: 'criterio' (la descripción del criterio), 'puntuacion' (un número), y 'justificacion' (un string).\n"
+            "5. **INSTRUCCIÓN CRÍTICA PARA CRITERIOS SIN EVIDENCIA**: Si en el documento no encuentras ninguna evidencia para poder evaluar un criterio específico, DEBES asignarle una puntuación de 0 y usar la siguiente justificación exacta: 'No se encontró evidencia en el documento para evaluar este criterio.'\n\n"
             "Ejemplo de la estructura de salida esperada: {'evaluacion': [{'criterio': 'Análisis del problema', 'puntuacion': 4.5, 'justificacion': 'El análisis es correcto y detallado, aunque podría mejorar la sección 2.1.'}]}"
         )
 
@@ -570,6 +690,7 @@ class ActivitiesMenu(ctk.CTkFrame):
             logger.error(f"Error al descargar entregas: {e}", exc_info=True)
             self.after(0, self._on_download_error, error_msg)
 
+    @log_action
     def handle_create_activity(self):
         logger.info("Botón 'Crear Actividad' pulsado.")
         name = self.activity_name_entry.get()

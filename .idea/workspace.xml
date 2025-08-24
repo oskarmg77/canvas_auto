@@ -4,14 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="Después de distintos fallos se tuvo que revertir la funcionalidad de gemini.">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="5c95a92f-e177-4e46-8733-3b40f1ef1fab" name="Changes" comment="Auto evaluacion con gemini v1">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Readme.md" beforeDir="false" afterPath="$PROJECT_DIR$/Readme.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/api/gemini_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/api/gemini_client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/gui/activities_menu.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/activities_menu.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/gui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/gui/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -119,7 +117,10 @@
       <workItem from="1755102850708" duration="356000" />
       <workItem from="1755774358839" duration="4527000" />
       <workItem from="1755787477707" duration="207000" />
-      <workItem from="1755787722640" duration="4788000" />
+      <workItem from="1755787722640" duration="5285000" />
+      <workItem from="1755938801308" duration="2652000" />
+      <workItem from="1755957994695" duration="2698000" />
+      <workItem from="1755965965368" duration="3899000" />
     </task>
     <task id="LOCAL-00001" summary="Implementa flujo de login y selección de curso">
       <option name="closed" value="true" />
@@ -233,7 +234,15 @@
       <option name="project" value="LOCAL" />
       <updated>1754903865405</updated>
     </task>
-    <option name="localTasksCounter" value="15" />
+    <task id="LOCAL-00015" summary="Auto evaluacion con gemini v1">
+      <option name="closed" value="true" />
+      <created>1755792646900</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1755792646900</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -264,12 +273,13 @@
     <MESSAGE value="feat: Añadir creación y listado completo de quizzes&#10;&#10;Implementa el módulo completo para la gestión de quizzes, tanto Clásicos como Nuevos Quizzes, dentro de un curso de Canvas.&#10;&#10;Esta nueva funcionalidad incluye:&#10;&#10;- Creación de &quot;Nuevos Quizzes&quot; con la capacidad de añadir preguntas de opción múltiple (tipo 'choice') de forma masiva a partir de un payload JSON.&#10;- Implementación de un método en `CanvasClient` (`_build_choice_item`) que transforma una estructura JSON simple en el formato complejo requerido por la API de New Quizzes.&#10;- Creación de Quizzes Clásicos y Nuevos Quizzes vacíos.&#10;- Listado completo de todos los quizzes de un curso, separando visualmente los Clásicos de los Nuevos.&#10;- Corrección en `get_new_quizzes` para manejar correctamente la paginación de la API, asegurando que se obtienen todos los resultados sin importar la cantidad.&#10;&#10;Se ha encapsulado toda la lógica de la interfaz de usuario en una nueva clase `QuizzesMenu` para mejorar la organización del código." />
     <MESSAGE value="Compilado .exe v1" />
     <MESSAGE value="Traducido al español un comentario en el main." />
-    <option name="LAST_COMMIT_MESSAGE" value="Traducido al español un comentario en el main." />
+    <MESSAGE value="Auto evaluacion con gemini v1" />
+    <option name="LAST_COMMIT_MESSAGE" value="Auto evaluacion con gemini v1" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/canvas_auto$course_window.coverage" NAME="course_window Coverage Results" MODIFIED="1753873132715" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
     <SUITE FILE_PATH="coverage/canvas_auto$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1754314119580" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/app/gui" />
-    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1755791925254" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/canvas_auto$main.coverage" NAME="main Coverage Results" MODIFIED="1755969197681" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/canvas_auto$gemini_tester.coverage" NAME="gemini_tester Coverage Results" MODIFIED="1755624565131" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tools" />
   </component>
 </project>
