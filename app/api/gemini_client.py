@@ -20,6 +20,7 @@ import logging
 import math
 import os
 import re
+import hashlib
 import time
 
 try:
@@ -75,6 +76,7 @@ class HybridEvaluator:
         max_retries: int = 4,
         base_delay: float = 1.2,
         chunk_chars: int = 7000,
+        cache_path: Optional[str] = ".gemini_file_cache.json"
     ) -> None:
         if genai is None:
             raise ImportError("Falta google-generativeai. Instala con: pip install google-generativeai")
@@ -96,6 +98,14 @@ class HybridEvaluator:
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.chunk_chars = chunk_chars
+        self.cache_path = cache_path
+        self._cache: Dict[str, str] = {}
+        if self.cache_path and os.path.exists(self.cache_path):
+            try:
+                with open(self.cache_path, "r", encoding="utf-8") as f:
+                    self._cache = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.warning(f"No se pudo cargar el caché de archivos de Gemini: {e}")
 
         # Modelos
         self._text_model = genai.GenerativeModel(self.text_model_name)
@@ -124,6 +134,37 @@ class HybridEvaluator:
         final_text = self._call_with_retry(self._text_model, synth_prompt)
         return self._json_from_text(final_text)
 
+    def _hash_file(self, path: str) -> str:
+        """Calcula el hash SHA256 de un archivo."""
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            # Leer en chunks para no consumir demasiada memoria
+            for chunk in iter(lambda: f.read(4096), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _save_cache(self):
+        """Guarda el diccionario de caché en un archivo JSON."""
+        if self.cache_path:
+            try:
+                with open(self.cache_path, "w", encoding="utf-8") as f:
+                    json.dump(self._cache, f, indent=2)
+            except IOError as e:
+                self.logger.error(f"Error al guardar el caché de archivos de Gemini: {e}")
+
+    def upload_or_get_cached(self, pdf_path: str) -> "genai.File":
+        """Sube un archivo si no está en caché, o recupera la referencia cacheada."""
+        file_hash = self._hash_file(pdf_path)
+        if file_hash in self._cache:
+            try:
+                return genai.get_file(name=self._cache[file_hash])
+            except Exception:
+                self.logger.warning(f"El archivo cacheado {self._cache[file_hash]} no se encontró en Gemini. Se volverá a subir.")
+        uploaded_file = self._upload_file_to_gemini(pdf_path)
+        self._cache[file_hash] = uploaded_file.name
+        self._save_cache()
+        return uploaded_file
+
     def _upload_file_to_gemini(self, pdf_path: str) -> "genai.File":
         """Sube un archivo a la API de Gemini y devuelve el objeto File."""
         self.logger.info(f"Subiendo archivo a la API de Gemini: {pdf_path}")
@@ -134,8 +175,7 @@ class HybridEvaluator:
 
     def evaluate_pdf(self, pdf_path: str, schema_hint: Optional[str] = None) -> Dict[str, Any]:
         """
-        Evalúa un PDF completo usando la API de Archivos para mayor eficiencia.
-        Sube el archivo, lo procesa y luego lo elimina.
+        Evalúa un PDF completo usando la API de Archivos. NO gestiona la subida/borrado.
         """
         if fitz is None:
             raise ImportError("Falta PyMuPDF. Instala con: pip install PyMuPDF")
@@ -143,7 +183,7 @@ class HybridEvaluator:
         pdf_file = None
         try:
             # 1. Subir el archivo
-            pdf_file = self._upload_file_to_gemini(pdf_path)
+            pdf_file = self.upload_or_get_cached(pdf_path)
 
             # 2. Construir el prompt
             # Ya no necesitamos extraer el texto manualmente, el modelo lo hará desde el archivo.
@@ -158,12 +198,8 @@ class HybridEvaluator:
             # 4. Llamar a la API (una única llamada)
             final_text = self._call_with_retry(self._vision_model, all_parts)
             return self._json_from_text(final_text)
-
         finally:
-            # 5. Limpieza: eliminar el archivo de los servidores de Google
-            if pdf_file:
-                self.logger.info(f"Eliminando archivo de la API: {pdf_file.name}")
-                genai.delete_file(pdf_file.name)
+            pass # No se borra el archivo, se mantiene en caché
 
     def prepare_pdf_evaluation_request(self, pdf_file_uri: str, schema_hint: Optional[str]) -> List[Any]:
         """

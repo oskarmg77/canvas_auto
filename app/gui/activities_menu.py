@@ -13,6 +13,7 @@ import json
 import queue
 import csv
 import concurrent.futures
+import random
 import time
 try:
     import google.generativeai as genai
@@ -20,6 +21,55 @@ except ImportError:
     genai = None
 
 import re
+import math
+
+class RateController:
+    """Controlador para limitar QPS y gestionar la concurrencia de forma adaptativa."""
+    def __init__(self, max_qps: float = 1.5, max_workers: int = 8):
+        self.tokens = 0.0
+        self.rate = max_qps
+        self.capacity = max(1.0, max_qps * 2.0)
+        self.lock = threading.Lock()
+        self.last = time.monotonic()
+        self.max_workers = max_workers
+        self._current_workers = max_workers
+
+    def leak_and_refill(self):
+        now = time.monotonic()
+        with self.lock:
+            elapsed = max(0.0, now - self.last)
+            self.last = now
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+
+    def acquire(self):
+        while True:
+            self.leak_and_refill()
+            with self.lock:
+                if self.tokens >= 1.0:
+                    self.tokens -= 1.0
+                    return
+            time.sleep(0.05)
+
+    def downgrade_workers(self):
+        with self.lock:
+            if self._current_workers > 1:
+                self._current_workers = max(1, self._current_workers // 2)
+        return self._current_workers
+
+    def current_workers(self):
+        with self.lock:
+            return self._current_workers
+
+    def cooldown(self, seconds: float):
+        # Para 'Retry-After' o enfriamiento tras 429
+        time.sleep(max(0.0, seconds))
+
+def _call_with_backoff_and_rate(controller: RateController, fn, *args, **kwargs):
+    """Envuelve una llamada a la IA respetando QPS, con reintentos ante 429."""
+    # Esta función ahora está fuera de la clase, pero la usaremos dentro.
+    # La lógica de reintentos se delega aquí.
+    controller.acquire()  # respeta QPS antes de enviar
+    return fn(*args, **kwargs) # El reintento ya está en gemini_client, aquí solo controlamos el ritmo
 
 # Diccionario para los tipos de entrega. Clave: API, Valor: Texto en GUI
 SUBMISSION_TYPES = {
@@ -41,6 +91,7 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.selected_assignment_id = None
         self.active_thread = None  # Para controlar el hilo de descarga
         self.queue = queue.Queue() # Cola para comunicación thread-safe
+        self.cancel_event = threading.Event() # Para cancelar tareas largas
         self.stop_polling = False # Flag para detener el sondeo de la cola
 
         back_button = ctk.CTkButton(self, text="< Volver al Menú Principal", command=self.main_window.show_main_menu)
@@ -123,6 +174,12 @@ class ActivitiesMenu(ctk.CTkFrame):
             command=self._start_evaluation_thread
         )
         self.evaluate_button.pack(side="left", padx=10)
+        
+        self.cancel_button = ctk.CTkButton(
+            actions_frame, text="Cancelar Proceso", state="disabled",
+            command=self._cancel_running_task, fg_color="firebrick", hover_color="darkred"
+        )
+        self.cancel_button.pack(side="left", padx=10)
 
         # Frame para la lista de actividades
         self.assignments_frame = ctk.CTkScrollableFrame(download_tab, label_text="Actividades del Curso")
@@ -196,6 +253,7 @@ class ActivitiesMenu(ctk.CTkFrame):
             btn.configure(state=state)
         self.download_button.configure(state="disabled")
         self.evaluate_button.configure(state="disabled")
+        self.cancel_button.configure(state="disabled")
 
     def _select_assignment(self, assignment_id):
         """Se llama al pulsar un botón de actividad. Inicia la obtención de detalles."""
@@ -313,6 +371,7 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.main_window.update_status("Iniciando evaluación con IA...")
         self.main_window.show_progress_bar()
         self._enable_assignment_buttons(False)
+        self.cancel_button.configure(state="normal")
 
         self.active_thread = threading.Thread(
             target=self._handle_evaluation, args=(assignment_id, summary, base_dir)
@@ -320,6 +379,13 @@ class ActivitiesMenu(ctk.CTkFrame):
         self.active_thread.start()
         self.stop_polling = False # Asegurarse de que el sondeo esté activo
         self._process_queue() # Iniciar el procesador de la cola
+
+    def _cancel_running_task(self):
+        """Establece el evento de cancelación para detener el hilo de trabajo."""
+        if self.active_thread and self.active_thread.is_alive():
+            logger.info("Se ha solicitado la cancelación del proceso.")
+            self.cancel_event.set()
+            self.cancel_button.configure(state="disabled", text="Cancelando...")
 
     def _process_queue(self):
         """Procesa mensajes de la cola para actualizar la GUI de forma segura."""
@@ -344,6 +410,8 @@ class ActivitiesMenu(ctk.CTkFrame):
                 elif message_type == "evaluation_finished":
                     self.stop_polling = True # Detener el sondeo
                     self._enable_assignment_buttons(True)
+                    self.cancel_button.configure(state="disabled", text="Cancelar Proceso")
+                    self.cancel_event.clear() # Resetear el evento para la próxima vez
                     self.main_window.update_status("Proceso finalizado.", 5000)
 
         except queue.Empty:
@@ -354,7 +422,7 @@ class ActivitiesMenu(ctk.CTkFrame):
 
     def _handle_evaluation(self, assignment_id, summary, base_dir):
         """Lógica de evaluación con Gemini usando la API de Archivos y de Lotes."""
-        uploaded_files = {}  # {student_name: gemini_file_object} 
+        uploaded_files = {}  # {student_name: {"file": gemini_file_object, "sha": hash}}
         try:
             # --- PREPARACIÓN ---
             assignment = self.assignments[assignment_id]
@@ -363,6 +431,14 @@ class ActivitiesMenu(ctk.CTkFrame):
             assignment_abbreviation = self._create_abbreviation(assignment['name'])
             activity_path = Path(base_dir) / f"{self.course_id} - {course_abbreviation}" / f"{assignment_id} - {assignment_abbreviation}"
             activity_path.mkdir(parents=True, exist_ok=True)
+
+            # Cargar caché de resultados de evaluaciones previas
+            results_cache_path = activity_path / "evaluaciones_cache.json"
+            try:
+                with open(results_cache_path, "r", encoding="utf-8") as f:
+                    results_cache = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                results_cache = {}
 
             self.queue.put(("update_status", ("Descargando rúbrica...",)))
             rubric_path = activity_path / f"rubrica_{assignment_id}.json"
@@ -379,6 +455,9 @@ class ActivitiesMenu(ctk.CTkFrame):
             total_submissions = len(submissions)
             self.queue.put(("update_progress", 0))
             for i, sub in enumerate(submissions):
+                if self.cancel_event.is_set():
+                    logger.info("Cancelación detectada durante la preparación de archivos.")
+                    break
                 progress = (i + 1) / total_submissions
                 student_name = self._sanitize_filename(sub.get("user", {}).get("name", "sin_nombre"))
                 self.queue.put(("update_status", (f"Preparando a {student_name} ({i+1}/{total_submissions})",)))
@@ -399,71 +478,102 @@ class ActivitiesMenu(ctk.CTkFrame):
                 self.client.download_file(pdf_attachment["url"], pdf_path.parent, pdf_path.name)
 
                 # Subir el archivo a Gemini y guardar su referencia
-                gemini_file = self.gemini_evaluator._upload_file_to_gemini(str(pdf_path))
-                uploaded_files[student_name] = gemini_file
+                gemini_file = self.gemini_evaluator.upload_or_get_cached(str(pdf_path))
+                file_sha = self.gemini_evaluator._hash_file(str(pdf_path))
+                uploaded_files[student_name] = {"file": gemini_file, "sha": file_sha}
 
             # --- FASE 2: Ejecutar las evaluaciones en paralelo ---
             self.queue.put(("update_status", ("Construyendo y enviando evaluaciones a la IA...",)))
             schema = "{'evaluacion': [{'criterio': str, 'puntuacion': float, 'justificacion': str}]}"
 
-            if not uploaded_files:
-                 raise Exception("No se encontraron entregas con PDF para evaluar.")
-
-            self.queue.put(("show_progress_bar", {"indeterminate": True}))
-            
-            # Usaremos un ThreadPoolExecutor para enviar las peticiones concurrentemente.
-            MAX_WORKERS = 8
+            # Separar tareas cacheadas de las nuevas
             evaluations = []
-            future_to_student = {}
+            items_to_evaluate = []
+            for student_name, data in uploaded_files.items():
+                if data["sha"] in results_cache:
+                    cached_result = results_cache[data["sha"]].copy()
+                    cached_result['alumno'] = student_name
+                    evaluations.append(cached_result)
+                    logger.info(f"Resultado para {student_name} (SHA: {data['sha'][:8]}...) encontrado en caché.")
+                else:
+                    items_to_evaluate.append((student_name, data))
 
-            quota_exceeded = False
-            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                # Preparamos y enviamos todas las tareas al pool
-                for student_name, gemini_file in uploaded_files.items():
+            if not items_to_evaluate:
+                self.queue.put(("update_status", ("Todos los resultados ya estaban en caché.", 3000)))
+            else:
+                self.queue.put(("show_progress_bar", {"indeterminate": True}))
+                controller = RateController(max_workers=8)
+
+                def _one_eval(student_name, data):
+                    gemini_file = data["file"]
                     contents = self.gemini_evaluator.prepare_pdf_evaluation_request(gemini_file.name, schema)
-                    future = executor.submit(self.gemini_evaluator.execute_single_request, contents)
-                    future_to_student[future] = student_name
+                    return _call_with_backoff_and_rate(controller, self.gemini_evaluator.execute_single_request, contents)
 
-                # --- FASE 3: Procesar resultados a medida que se completan ---
-                self.queue.put(("update_status", ("Esperando y procesando respuestas de la IA...",)))
-                self.queue.put(("show_progress_bar", {"indeterminate": False}))
+                i_done = 0
+                total_items = len(items_to_evaluate)
+                while i_done < total_items and not self.cancel_event.is_set():
+                    batch_size = controller.current_workers()
+                    batch = items_to_evaluate[i_done : i_done + batch_size]
+                    if not batch: break
 
-                total_futures = len(future_to_student)
-                for i, future in enumerate(concurrent.futures.as_completed(future_to_student)):
-                    if quota_exceeded: # Si ya sabemos que la cuota se excedió, cancelamos el resto.
-                        future.cancel()
-                        continue
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
+                        future_to_student = {
+                            executor.submit(_one_eval, student, data): (student, data)
+                            for student, data in batch
+                        }
 
-                    student_name = future_to_student[future]
-                    progress = (i + 1) / total_futures
-                    self.queue.put(("update_status", (f"Procesando resultado de {student_name} ({i+1}/{total_futures})",)))
-                    self.queue.put(("update_progress", progress))
-                    try:
-                        # .result() obtiene el resultado de la tarea. Si hubo una excepción, la relanza.
-                        result_json = future.result()
-                        if "error" in result_json:
-                            logger.error(f"Error en la respuesta para {student_name}: {result_json['error']}")
-                            continue
-                        result_json['alumno'] = student_name
-                        evaluations.append(result_json)
-                    except Exception as e:
-                        error_str = str(e)
-                        logger.error(f"Error en la evaluación de {student_name}: {error_str}", exc_info=False) # exc_info=False para no llenar el log con tracebacks de cuota
-                        # ¡Detección inteligente del error de cuota!
-                        if "429" in error_str and "quota" in error_str:
-                            quota_exceeded = True
-                            msg = ("Se ha excedido la cuota diaria de la API de Gemini (plan gratuito).\n\n"
-                                   "El proceso se detendrá. Los resultados obtenidos hasta ahora se guardarán.\n"
-                                   "Por favor, inténtalo de nuevo mañana o considera un plan de pago de Google.")
-                            self.queue.put(("evaluation_error", msg))
+                        self.queue.put(("update_status", ("Esperando y procesando respuestas de la IA...",)))
+                        self.queue.put(("show_progress_bar", {"indeterminate": False}))
 
+                        for future in concurrent.futures.as_completed(future_to_student):
+                            if self.cancel_event.is_set():
+                                future.cancel()
+                                continue
+
+                            student_name, data = future_to_student[future]
+                            try:
+                                result_json = future.result()
+                                if "error" in result_json:
+                                    logger.error(f"Error en la respuesta para {student_name}: {result_json['error']}")
+                                else:
+                                    result_json['alumno'] = student_name
+                                    evaluations.append(result_json)
+                                    # Guardar en caché el resultado sin el nombre del alumno
+                                    result_to_cache = result_json.copy()
+                                    del result_to_cache['alumno']
+                                    results_cache[data["sha"]] = result_to_cache
+
+                            except Exception as e:
+                                msg = str(e).lower()
+                                logger.error(f"Error en la evaluación de {student_name}: {msg}")
+                                if any(s in msg for s in ["429", "too many requests", "quota", "rate"]):
+                                    new_w = controller.downgrade_workers()
+                                    self.queue.put(("update_status", (f"Límite de API detectado. Bajando concurrencia a {new_w}...", 4000)))
+                                    # No marcamos quota_exceeded, dejamos que el controlador gestione
+                                else:
+                                    pass # Otros errores ya se loggean
+                            finally:
+                                i_done += 1
+                                progress = (len(evaluations)) / len(uploaded_files)
+                                self.queue.put(("update_status", (f"Procesando resultados ({len(evaluations)}/{len(uploaded_files)})",)))
+                                self.queue.put(("update_progress", progress))
+
+            if self.cancel_event.is_set():
+                self.queue.put(("update_status", ("Proceso cancelado por el usuario.", 5000)))
 
             self.queue.put(("update_status", ("Guardando resultados...",)))
             self._save_evaluations_to_csv(evaluations, activity_path / "evaluaciones_gemini.csv")
 
+            # Guardar el caché de resultados actualizado
+            try:
+                with open(results_cache_path, "w", encoding="utf-8") as f:
+                    json.dump(results_cache, f, indent=2)
+            except IOError as e:
+                logger.error(f"No se pudo guardar el caché de resultados: {e}")
+
             # --- Finalización Exitosa ---
-            if not quota_exceeded:
-                self.queue.put(("evaluation_success", len(evaluations)))
+            # Solo mostrar éxito si no fue cancelado o por error de cuota
+            self.queue.put(("evaluation_success", len(evaluations)))
 
         except Exception as e:
             error_msg = f"Ocurrió un error durante la evaluación: {e}"
@@ -472,14 +582,17 @@ class ActivitiesMenu(ctk.CTkFrame):
 
         finally:
             # --- FASE 4: Limpieza de archivos subidos ---
-            self.queue.put(("update_status", ("Limpiando archivos temporales de la API...",)))
-            for student_name, gemini_file in uploaded_files.items():
-                try:
-                    logger.info(f"Eliminando archivo {gemini_file.name} de {student_name}...")
-                    genai.delete_file(gemini_file.name)
-                    logger.info(f"Archivo {gemini_file.name} de {student_name} eliminado correctamente.")
-                except Exception as e:
-                    logger.error(f"No se pudo eliminar el archivo {gemini_file.name}: {e}")
+            # Por defecto, no borramos los archivos para aprovechar la caché en futuras ejecuciones.
+            # Se podría añadir un checkbox en la UI para controlar este comportamiento.
+            delete_remote_files = False 
+            if delete_remote_files:
+                self.queue.put(("update_status", ("Limpiando archivos temporales de la API...",)))
+                for student_name, gemini_file in uploaded_files.items():
+                    try:
+                        logger.info(f"Eliminando archivo {gemini_file.name} de {student_name}...")
+                        genai.delete_file(gemini_file.name)
+                    except Exception as e:
+                        logger.error(f"No se pudo eliminar el archivo {gemini_file.name}: {e}")
             self.queue.put(("evaluation_finished", None))
 
     def _on_evaluation_success(self, count):
@@ -499,20 +612,25 @@ class ActivitiesMenu(ctk.CTkFrame):
             return
 
         try:
-            # Extraer todas las claves de los criterios del primer resultado para crear las cabeceras.
-            # Esto asume que todos los resultados tienen los mismos criterios.
-            first_result = evaluations[0]
-            criteria_list = first_result.get('evaluacion', [])
+            # --- 1. Primera pasada: Recopilar todos los nombres de criterios posibles ---
+            all_criteria_names = set()
+            for result in evaluations:
+                for crit_eval in result.get('evaluacion', []):
+                    crit_name = crit_eval.get('criterio', '').strip()
+                    if crit_name:
+                        # Saneamos el nombre del criterio para que sea un nombre de columna válido
+                        sanitized_crit_name = re.sub(r'\s+', '_', crit_name.lower())
+                        sanitized_crit_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_crit_name)
+                        all_criteria_names.add(sanitized_crit_name)
+            
+            sorted_criteria = sorted(list(all_criteria_names))
 
             # Crear las cabeceras dinámicamente
             fieldnames = ['alumno']
-            for crit in criteria_list:
-                crit_name = crit.get('criterio', 'criterio_desconocido').strip()
-                # Saneamos el nombre del criterio para que sea un nombre de columna válido
-                sanitized_crit_name = re.sub(r'\s+', '_', crit_name.lower())
-                sanitized_crit_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_crit_name)
-                fieldnames.append(f"{sanitized_crit_name}_puntuacion")
-                fieldnames.append(f"{sanitized_crit_name}_justificacion")
+            for crit_name in sorted_criteria:
+                fieldnames.append(f"{crit_name}_puntuacion")
+                fieldnames.append(f"{crit_name}_justificacion")
+            fieldnames.append('puntuacion_total')
 
             with csv_path.open('w', newline='', encoding='utf-8-sig') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
@@ -520,12 +638,18 @@ class ActivitiesMenu(ctk.CTkFrame):
 
                 for result in evaluations:
                     row = {'alumno': result.get('alumno', 'N/A')}
+                    total_score = 0.0
                     for crit_eval in result.get('evaluacion', []):
                         crit_name = crit_eval.get('criterio', 'criterio_desconocido').strip()
                         sanitized_crit_name = re.sub(r'\s+', '_', crit_name.lower())
                         sanitized_crit_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_crit_name)
-                        row[f"{sanitized_crit_name}_puntuacion"] = crit_eval.get('puntuacion')
-                        row[f"{sanitized_crit_name}_justificacion"] = crit_eval.get('justificacion')
+                        
+                        score = crit_eval.get('puntuacion')
+                        if isinstance(score, (int, float)):
+                            total_score += score
+                        row[f"{sanitized_crit_name}_puntuacion"] = score
+                        row[f"{sanitized_crit_name}_justificacion"] = crit_eval.get('justificacion', '')
+                    row['puntuacion_total'] = total_score
                     writer.writerow(row)
 
             logger.info(f"Resultados de la evaluación guardados en: {csv_path}")
