@@ -198,15 +198,64 @@ class HybridEvaluator:
             # 4. Llamar a la API (una única llamada)
             final_text = self._call_with_retry(self._vision_model, all_parts)
             return self._json_from_text(final_text)
-        finally:
-            pass # No se borra el archivo, se mantiene en caché
+        finally: # pragma: no cover
+            pass # No se borra el archivo, se mantiene en caché para ejecuciones futuras
 
-    def prepare_pdf_evaluation_request(self, pdf_file_uri: str, schema_hint: Optional[str]) -> List[Any]:
+    def _build_rubric_based_prompt(self, rubric_json: dict) -> str:
+        """Construye un prompt muy específico basado en la rúbrica oficial."""
+        criteria_data = []
+        # Extraer los criterios y sus posibles ratings (categoría y puntos)
+        for crit in rubric_json.get('data', []):
+            ratings_info = []
+            for r in crit.get('ratings', []):
+                ratings_info.append({
+                    "categoria": r.get('description', 'N/A'),
+                    "puntuacion": r.get('points', 0.0)
+                })
+            criteria_data.append({
+                "criterio_nombre": crit.get('description', 'Criterio sin nombre'),
+                "puntuacion_maxima": crit.get('points', 0.0),
+                "posibles_ratings": ratings_info
+            })
+
+        rubric_text = json.dumps(criteria_data, ensure_ascii=False, indent=2)
+
+        # El nuevo esquema JSON que esperamos
+        new_schema = """{
+  "evaluacion": [
+    {
+      "criterio": "Nombre exacto del criterio de la rúbrica",
+      "categoria": "Nombre exacto de la categoría elegida (ej. Excelente, Bien...)",
+      "puntuacion": "Puntuación numérica exacta correspondiente a la categoría elegida",
+      "justificacion": "Justificación concisa basada en el documento."
+    }
+  ],
+  "resumen_cualitativo": "Un resumen de 3-4 frases sobre las fortalezas y debilidades generales del trabajo, con una recomendación de mejora."
+}"""
+
+        return (
+            "Eres un asistente de profesor universitario experto. Tu tarea es evaluar la entrega de un alumno (archivo PDF adjunto) "
+            "utilizando ESTRICTAMENTE la siguiente rúbrica de evaluación. Debes ser objetivo y basar tu puntuación y justificación "
+            "únicamente en el contenido del documento y los criterios de la rúbrica.\n\n"
+            "RÚBRICA OFICIAL (en formato JSON):\n"
+            f"{rubric_text}\n\n"
+            "INSTRUCCIONES DETALLADAS Y OBLIGATORIAS:\n"
+            "1. **Analiza el PDF adjunto** en su totalidad para comprender el trabajo del alumno.\n"
+            "2. **Evalúa CADA UNO de los criterios listados en la rúbrica**: Para cada criterio, debes elegir UNA de las 'posibles_ratings' (categorías) que mejor se ajuste al contenido del PDF. Asigna la 'puntuacion' exacta de esa categoría.\n"
+            "3. **Formato de Salida OBLIGATORIO**: Devuelve un ÚNICO objeto JSON válido y minificado. No incluyas explicaciones, comentarios, ni ```json ... ```. La respuesta debe ser exclusivamente el JSON.\n"
+            "4. **Esquema del JSON de Salida**: El JSON debe seguir este esquema exacto:\n"
+            f"{new_schema}\n"
+            "5. **Consistencia de Nombres**: En tu respuesta, la clave 'criterio' debe contener el valor exacto de 'criterio_nombre' de la rúbrica. La clave 'categoria' debe contener el valor exacto de la 'categoria' elegida de la rúbrica.\n"
+            "6. **INSTRUCCIÓN CRÍTICA PARA CRITERIOS SIN EVIDENCIA**: Si en el documento no encuentras NINGUNA evidencia para poder evaluar un criterio específico, DEBES asignarle la categoría y puntuación más bajas disponibles en la rúbrica para ese criterio (normalmente 0 puntos) y usar una justificación clara como: 'No se encontró evidencia en el documento para evaluar este criterio.'\n"
+            "7. **Resumen Cualitativo**: Al final, proporciona un resumen general en la clave 'resumen_cualitativo'."
+        )
+
+    def prepare_pdf_evaluation_request(self, pdf_file_uri: str, rubric_json: dict) -> List[Any]:
         """
         Prepara el contenido de una única petición de evaluación para ser usada en un lote.
         NO la ejecuta, solo prepara la lista de partes ('contents').
         """
-        prompt = self._build_page_prompt("", 1, 1, schema_hint)
+        prompt = self._build_rubric_based_prompt(rubric_json)
         uploaded_file = genai.get_file(name=pdf_file_uri)
         # Devuelve la lista de 'contents' lista para el batch
         return [prompt, uploaded_file]

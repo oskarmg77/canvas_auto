@@ -484,8 +484,6 @@ class ActivitiesMenu(ctk.CTkFrame):
 
             # --- FASE 2: Ejecutar las evaluaciones en paralelo ---
             self.queue.put(("update_status", ("Construyendo y enviando evaluaciones a la IA...",)))
-            schema = "{'evaluacion': [{'criterio': str, 'puntuacion': float, 'justificacion': str}]}"
-
             # Separar tareas cacheadas de las nuevas
             evaluations = []
             items_to_evaluate = []
@@ -506,7 +504,7 @@ class ActivitiesMenu(ctk.CTkFrame):
 
                 def _one_eval(student_name, data):
                     gemini_file = data["file"]
-                    contents = self.gemini_evaluator.prepare_pdf_evaluation_request(gemini_file.name, schema)
+                    contents = self.gemini_evaluator.prepare_pdf_evaluation_request(gemini_file.name, rubric_json)
                     return _call_with_backoff_and_rate(controller, self.gemini_evaluator.execute_single_request, contents)
 
                 i_done = 0
@@ -562,7 +560,7 @@ class ActivitiesMenu(ctk.CTkFrame):
                 self.queue.put(("update_status", ("Proceso cancelado por el usuario.", 5000)))
 
             self.queue.put(("update_status", ("Guardando resultados...",)))
-            self._save_evaluations_to_csv(evaluations, activity_path / "evaluaciones_gemini.csv")
+            self._save_evaluations_to_csv(evaluations, activity_path / "evaluaciones_gemini.csv", rubric_json)
 
             # Guardar el caché de resultados actualizado
             try:
@@ -605,51 +603,69 @@ class ActivitiesMenu(ctk.CTkFrame):
             f"Se han evaluado {count} entregas con PDF.\nEl resultado se ha guardado en 'evaluaciones_gemini.csv'."
         )
 
-    def _save_evaluations_to_csv(self, evaluations: list, csv_path: Path):
-        """Guarda los resultados de la evaluación de Gemini en un archivo CSV."""
+    def _save_evaluations_to_csv(self, evaluations: list, csv_path: Path, rubric_json: dict):
+        """Guarda los resultados de la evaluación de Gemini en un archivo CSV, alineado con la rúbrica."""
         if not evaluations:
             logger.warning("No se generaron evaluaciones para guardar en CSV.")
             return
 
         try:
-            # --- 1. Primera pasada: Recopilar todos los nombres de criterios posibles ---
-            all_criteria_names = set()
-            for result in evaluations:
-                for crit_eval in result.get('evaluacion', []):
-                    crit_name = crit_eval.get('criterio', '').strip()
-                    if crit_name:
-                        # Saneamos el nombre del criterio para que sea un nombre de columna válido
-                        sanitized_crit_name = re.sub(r'\s+', '_', crit_name.lower())
-                        sanitized_crit_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_crit_name)
-                        all_criteria_names.add(sanitized_crit_name)
-            
-            sorted_criteria = sorted(list(all_criteria_names))
+            # 1. Definir las columnas y el orden a partir de la rúbrica oficial
+            official_criteria = []
+            for crit in rubric_json.get('data', []):
+                crit_name = crit.get('description', f"criterio_id_{crit.get('id', 'unk')}").strip()
+                # Saneamos el nombre para usarlo como base de la columna
+                sanitized_name = re.sub(r'\s+', '_', crit_name.lower())
+                sanitized_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_name)
+                official_criteria.append({'original': crit_name, 'sanitized': sanitized_name})
 
-            # Crear las cabeceras dinámicamente
+            # 2. Construir las cabeceras del CSV
             fieldnames = ['alumno']
-            for crit_name in sorted_criteria:
-                fieldnames.append(f"{crit_name}_puntuacion")
-                fieldnames.append(f"{crit_name}_justificacion")
-            fieldnames.append('puntuacion_total')
+            for crit in official_criteria:
+                base_name = crit['sanitized']
+                fieldnames.append(f"{base_name}_puntuacion")
+                fieldnames.append(f"{base_name}_categoria")
+                fieldnames.append(f"{base_name}_justificacion")
+            fieldnames.extend(['puntuacion_total', 'resumen_cualitativo'])
 
             with csv_path.open('w', newline='', encoding='utf-8-sig') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
                 writer.writeheader()
 
+                # 3. Procesar cada evaluación para llenar las filas
                 for result in evaluations:
                     row = {'alumno': result.get('alumno', 'N/A')}
                     total_score = 0.0
-                    for crit_eval in result.get('evaluacion', []):
-                        crit_name = crit_eval.get('criterio', 'criterio_desconocido').strip()
-                        sanitized_crit_name = re.sub(r'\s+', '_', crit_name.lower())
-                        sanitized_crit_name = re.sub(r'[^a-zA-Z0-9_]', '', sanitized_crit_name)
-                        
-                        score = crit_eval.get('puntuacion')
-                        if isinstance(score, (int, float)):
-                            total_score += score
-                        row[f"{sanitized_crit_name}_puntuacion"] = score
-                        row[f"{sanitized_crit_name}_justificacion"] = crit_eval.get('justificacion', '')
+
+                    # Crear un mapa de las evaluaciones de Gemini para fácil acceso
+                    gemini_evals_map = {
+                        item.get('criterio', '').strip(): item
+                        for item in result.get('evaluacion', [])
+                    }
+
+                    # Iterar sobre los criterios OFICIALES para asegurar el orden y la consistencia
+                    for crit_info in official_criteria:
+                        crit_name_original = crit_info['original']
+                        crit_name_sanitized = crit_info['sanitized']
+
+                        # Buscar la evaluación de Gemini que corresponde a este criterio oficial
+                        gemini_eval = gemini_evals_map.get(crit_name_original)
+
+                        if gemini_eval:
+                            score = gemini_eval.get('puntuacion')
+                            if isinstance(score, (int, float)):
+                                total_score += score
+                            row[f"{crit_name_sanitized}_puntuacion"] = score
+                            row[f"{crit_name_sanitized}_categoria"] = gemini_eval.get('categoria', '')
+                            row[f"{crit_name_sanitized}_justificacion"] = gemini_eval.get('justificacion', '')
+                        else:
+                            # El criterio oficial no fue devuelto por Gemini, dejar en blanco
+                            row[f"{crit_name_sanitized}_puntuacion"] = ''
+                            row[f"{crit_name_sanitized}_categoria"] = 'FALTANTE'
+                            row[f"{crit_name_sanitized}_justificacion"] = 'Este criterio no fue evaluado por la IA.'
+
                     row['puntuacion_total'] = total_score
+                    row['resumen_cualitativo'] = result.get('resumen_cualitativo', '')
                     writer.writerow(row)
 
             logger.info(f"Resultados de la evaluación guardados en: {csv_path}")
@@ -658,38 +674,6 @@ class ActivitiesMenu(ctk.CTkFrame):
             logger.error(f"Error al guardar el archivo CSV de evaluaciones: {e}", exc_info=True)
             # Informar al usuario en el hilo principal
             self.after(0, messagebox.showerror, "Error de Escritura", f"No se pudo guardar el archivo CSV de resultados: {e}")
-
-    def _build_evaluation_prompt(self, rubric_json: dict) -> str:
-        """Construye el prompt para Gemini usando la rúbrica."""
-        # Filtramos la rúbrica para enviar solo la información esencial al modelo,
-        # evitando sobrecargarlo con IDs y metadatos innecesarios.
-        criteria_data = []
-        for crit in rubric_json.get('data', []):
-            ratings_data = [
-                {'description': r.get('description'), 'points': r.get('points')}
-                for r in crit.get('ratings', [])
-            ]
-            criteria_data.append({
-                'description': crit.get('description'),
-                'points': crit.get('points'),
-                'ratings': ratings_data
-            })
-
-        rubric_text = json.dumps(criteria_data, ensure_ascii=False, indent=2)
-        return (
-            "Eres un asistente de profesor universitario experto. Tu tarea es evaluar la entrega de un alumno (archivo PDF adjunto) "
-            "utilizando la siguiente rúbrica de evaluación. Debes ser objetivo y basar tu puntuación y justificación "
-            "únicamente en el contenido del documento y los criterios de la rúbrica.\n\n"
-            "RÚBRICA (en formato JSON):\n"
-            f"{rubric_text}\n\n"
-            "INSTRUCCIONES DETALLADAS:\n"
-            "1. **Analiza el PDF adjunto** en su totalidad para comprender el trabajo del alumno.\n"
-            "2. **Evalúa cada criterio**: Para cada criterio de la rúbrica, elige el nivel de 'rating' que mejor se ajuste al contenido del PDF, asigna los 'points' correspondientes y escribe una 'justificacion' clara y concisa, haciendo referencia a partes específicas del documento si es posible.\n"
-            "3. **Formato de Salida OBLIGATORIO**: Devuelve un ÚNICO objeto JSON válido y minificado. No incluyas explicaciones, comentarios, ni ```json ... ```. La respuesta debe ser exclusivamente el JSON.\n"
-            "4. **Esquema del JSON**: El JSON debe tener una clave 'evaluacion' que contenga una lista de objetos. Cada objeto debe tener tres claves: 'criterio' (la descripción del criterio), 'puntuacion' (un número), y 'justificacion' (un string).\n"
-            "5. **INSTRUCCIÓN CRÍTICA PARA CRITERIOS SIN EVIDENCIA**: Si en el documento no encuentras ninguna evidencia para poder evaluar un criterio específico, DEBES asignarle una puntuación de 0 y usar la siguiente justificación exacta: 'No se encontró evidencia en el documento para evaluar este criterio.'\n\n"
-            "Ejemplo de la estructura de salida esperada: {'evaluacion': [{'criterio': 'Análisis del problema', 'puntuacion': 4.5, 'justificacion': 'El análisis es correcto y detallado, aunque podría mejorar la sección 2.1.'}]}"
-        )
 
     def _create_abbreviation(self, text: str) -> str:
         """Crea una abreviatura a partir de un texto, usando las iniciales de las palabras significativas."""
